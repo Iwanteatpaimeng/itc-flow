@@ -42,6 +42,40 @@ function originPattern(url) {
     return /^https?:$/.test(parsed.protocol) ? `${parsed.origin}/*` : null;
   } catch { return null; }
 }
+// An embedded document may redirect away from the host its `src` named, and the
+// frames actually rendered under the owner are the only trustworthy evidence.
+async function contentBranch(session, ownerFrameId, declaredOrigin) {
+  const frames = await chrome.webNavigation.getAllFrames({ tabId: session.tabId }).catch(() => []);
+  const children = new Map();
+  for (const frame of frames || []) {
+    if (frame.frameId === ownerFrameId || !Number.isInteger(frame.parentFrameId)) continue;
+    const list = children.get(frame.parentFrameId) || [];
+    list.push(frame);
+    children.set(frame.parentFrameId, list);
+  }
+  const direct = (children.get(ownerFrameId) || []).map(frame => ({ frame, origin: originPattern(frame.url) }));
+  // A child still served from the declared host is the document; siblings are the
+  // course shell. Only when no child matches does the declared host count as stale.
+  const matched = direct.filter(item => item.origin && item.origin === declaredOrigin);
+  const branch = [];
+  const queue = (matched.length ? matched : direct).map(item => item.frame);
+  while (queue.length) {
+    const frame = queue.shift();
+    branch.push({ frameId: frame.frameId, parentFrameId: frame.parentFrameId, origin: originPattern(frame.url) });
+    queue.push(...(children.get(frame.frameId) || []));
+  }
+  return branch;
+}
+function frameOriginsOf(session) {
+  return [...new Set([...(session.frameOrigins || []), ...(session.documentOrigins || [])])];
+}
+async function grantedTargets(entry) {
+  const granted = [];
+  for (const pattern of entry.targetOrigins || (entry.frameOrigin ? [entry.frameOrigin] : [])) {
+    if (pattern && await chrome.permissions.contains({ origins: [pattern] })) granted.push(pattern);
+  }
+  return granted;
+}
 function publicStatus(session) {
   if (!session) return null;
   const fields = ["phase", "running", "taskType", "title", "detail", "remainingSeconds", "elapsedSeconds",
@@ -127,15 +161,14 @@ function clearEmbeddedTimer(session, token) {
 async function reconnectEmbeddedReceiver(session, entry) {
   if (session.embedded?.[entry.token] !== entry || entry.started || !session.running ||
       entry.runId !== session.activeRunId || entry.expiresAt <= Date.now()) return;
-  const pattern = entry.frameOrigin;
-  if (!pattern || !await chrome.permissions.contains({ origins: [pattern] })) return;
+  const granted = await grantedTargets(entry);
+  if (!granted.length) return;
   // A lazy Word frame can be created after the initial tab injection, and its
   // first flow-bind can precede its receiver. Connect only this owner's actual
   // permitted children, then ask the same owner to repeat its original token.
-  await registerOrigin(pattern);
-  const frames = await chrome.webNavigation.getAllFrames({ tabId: session.tabId }).catch(() => []);
-  for (const frame of frames || []) {
-    if (frame.parentFrameId !== entry.ownerFrameId || originPattern(frame.url) !== pattern) continue;
+  for (const pattern of granted) await registerOrigin(pattern);
+  for (const frame of entry.branch || []) {
+    if (frame.parentFrameId !== entry.ownerFrameId || !granted.includes(frame.origin)) continue;
     try {
       await chrome.scripting.executeScript({ target: { tabId: session.tabId, frameIds: [frame.frameId] }, files: ["shared.js", "content.js"] });
       if (!session.frameIds.includes(frame.frameId)) session.frameIds.push(frame.frameId);
@@ -212,12 +245,21 @@ async function handleEmbedded(session, message, frameId) {
       runId: message.runId, resetPosition: message.resetPosition !== false, started: false, expiresAt: Date.now() + 12000 };
     const frameOrigin = originPattern(message.frameOrigin);
     entry.frameOrigin = frameOrigin;
-    if (frameOrigin && !await chrome.permissions.contains({ origins: [frameOrigin] })) {
-      session.frameOrigins = [...new Set([...(session.frameOrigins || []), frameOrigin])];
+    // The iframe can redirect after the owner wrote its `src`; authorize and
+    // connect the frames that actually exist under this owner instead.
+    entry.branch = await contentBranch(session, frameId, frameOrigin);
+    const branchOrigins = [...new Set(entry.branch.map(frame => frame.origin).filter(Boolean))];
+    entry.targetOrigins = branchOrigins.length ? branchOrigins : (frameOrigin ? [frameOrigin] : []);
+    session.documentOrigins = [...new Set([...(session.documentOrigins || []), ...entry.targetOrigins])];
+    const ungranted = [];
+    for (const pattern of entry.targetOrigins) {
+      if (!await chrome.permissions.contains({ origins: [pattern] })) ungranted.push(pattern);
+    }
+    if (ungranted.length) {
       clearEmbeddedTimer(session, entry.token);
       await send(session.tabId, frameId, { type: "ENGINE_EMBEDDED_RETURN", token: entry.token,
         runId: entry.runId, ok: false,
-        detail: `内嵌文档或播放器尚未连接（${new URL(frameOrigin).hostname}），请点击“连接内嵌内容”后继续，当前阅读位置已保留。` });
+        detail: `内嵌文档或播放器尚未连接（${ungranted.map(pattern => new URL(pattern).hostname).join("、")}），请点击“连接内嵌内容”后继续，当前阅读位置已保留。` });
       await save(session);
       return { ok: true };
     }
@@ -346,6 +388,8 @@ async function probeAndRun(session, { reinject = false } = {}) {
   const checkpoint = session.checkpoint?.key === candidate.key ? session.checkpoint : null;
   if (session.activeFrameId !== null && selectedDifferentContent) {
     await stopFrames(session);
+    // Authorized document origins belong to the task that discovered them.
+    session.documentOrigins = [];
     // All ancestors remain available to confirm child geometry, but old children have stopped.
     await Promise.all((session.frameIds || [0]).filter(frameId => frameId !== candidate.frameId)
       .map(frameId => send(session.tabId, frameId, { type: "ENGINE_PROBE", settings, viewportEnabled: true })));
@@ -386,7 +430,7 @@ function scheduleProbe(tabId, delay = 500, reinject = false) {
 }
 async function missingFrameOrigins(session) {
   const missing = [];
-  for (const pattern of session.frameOrigins || []) {
+  for (const pattern of frameOriginsOf(session)) {
     if (!await chrome.permissions.contains({ origins: [pattern] })) missing.push(pattern);
   }
   return missing;
@@ -552,7 +596,7 @@ async function handleControl(message) {
       session.phase = "detecting";
       session.navigationStartedAt = null;
       session.detectionStartedAt = Date.now();
-      for (const pattern of session.frameOrigins || []) {
+      for (const pattern of frameOriginsOf(session)) {
         if (await chrome.permissions.contains({ origins: [pattern] })) await registerOrigin(pattern);
       }
       session.frameIds = await inject(session.tabId, session.frameIds);
@@ -608,7 +652,8 @@ chrome.runtime.onMessage.addListener((message, sender, respond) => {
       for (const frame of actualFrames || []) {
         const origin = originPattern(frame.url);
         const pending = Object.values(session.embedded || {}).find(entry => entry.childFrameId === frame.frameId ||
-          !entry.started && entry.ownerFrameId === frame.parentFrameId && entry.frameOrigin === origin);
+          !entry.started && entry.ownerFrameId === frame.parentFrameId && entry.frameOrigin === origin ||
+          !entry.started && entry.branch?.some(node => node.frameId === frame.frameId));
         metadata.set(frame.frameId, { parentFrameId: frame.parentFrameId, origin: origin ? new URL(origin).origin : null,
           permission: origin ? await chrome.permissions.contains({ origins: [origin] }) : null,
           known: knownFrameIds.has(frame.frameId), connectionPending: Boolean(pending && !pending.started),
@@ -625,8 +670,8 @@ chrome.runtime.onMessage.addListener((message, sender, respond) => {
     if (message.type === "ENGINE_READY") {
       if (!session.frameIds.includes(frameId)) session.frameIds.push(frameId);
       if (session.running) for (const entry of Object.values(session.embedded || {})) {
-        if (entry.started || entry.runId !== session.activeRunId || entry.expiresAt <= Date.now() ||
-            !entry.frameOrigin || !await chrome.permissions.contains({ origins: [entry.frameOrigin] })) continue;
+        if (entry.started || entry.runId !== session.activeRunId || entry.expiresAt <= Date.now()) continue;
+        if (!(await grantedTargets(entry)).length) continue;
         await send(tabId, entry.ownerFrameId, { type: "ENGINE_EMBEDDED_REBIND", token: entry.token, runId: entry.runId });
       }
       if (session.running) scheduleProbe(tabId, 650);
