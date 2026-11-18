@@ -332,6 +332,9 @@ async function probeAndRun(session, { reinject = false } = {}) {
   const candidates = results.filter(item => item.result?.candidate).map(item => ({
     frameId: item.frameId, ...item.result.candidate
   })).sort((left, right) => Number(Boolean(right.flowRoot)) - Number(Boolean(left.flowRoot)) ||
+    // A frame that only embeds the lesson must never shadow the frame that really
+    // holds the reader, even though it sits higher in the tree.
+    Number(Boolean(left.frameTransport)) - Number(Boolean(right.frameTransport)) ||
     (left.flowRoot && right.flowRoot ?
       (Number.isFinite(left.frameDepth) ? left.frameDepth : Number(left.frameId !== 0)) -
       (Number.isFinite(right.frameDepth) ? right.frameDepth : Number(right.frameId !== 0)) : 0) ||

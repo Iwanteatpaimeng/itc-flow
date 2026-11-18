@@ -41,7 +41,8 @@ function installTreeQueries(engine) {
 // Keep the host/chapter/insertH5 structure from the supplied Edge diagnosis.
 // The Word document has its own content engine and its own scrolling element;
 // no parent contentDocument access is supplied, as in a cross-origin embed.
-function fixture({ forwardChildProgress = true } = {}) {
+function fixture({ forwardChildProgress = true, deny = false } = {}) {
+  let denied = deny;
   const owner = createContent();
   const child = createContent({ type: "document", title: "本地 Word 阅读器" });
   const root = owner.context.document.scrollingElement;
@@ -97,8 +98,15 @@ function fixture({ forwardChildProgress = true } = {}) {
       }
       if (pending && ready?.token === pending.token) {
         const request = pending; pending = null; ready = null;
-        const started = await child.ask("ENGINE_EMBEDDED_RUN", { token: request.token, settings, runId: request.runId, resetPosition: request.resetPosition });
-        assert.equal(started.ok, true, "the Word engine accepts its actual parent's pairing token");
+        if (denied) {
+          // What background.js sends when the real document origins are not granted:
+          // the frame is never injected, and the owner must not stay frozen.
+          await owner.ask("ENGINE_EMBEDDED_RETURN", { token: request.token, runId: request.runId, ok: false,
+            detail: "内嵌文档 https://urc.hep.com.cn 尚未获得访问权限，连接已中断；阅读位置已保留" });
+        } else {
+          const started = await child.ask("ENGINE_EMBEDDED_RUN", { token: request.token, settings, runId: request.runId, resetPosition: request.resetPosition });
+          assert.equal(started.ok, true, "the Word engine accepts its actual parent's pairing token");
+        }
         progressed = true;
       }
       if (!progressed) return;
@@ -115,7 +123,8 @@ function fixture({ forwardChildProgress = true } = {}) {
     for (let step = 0; step < 600 && !condition(); step++) await advance(100);
     assert.ok(condition(), `condition not reached: ${owner.snapshot()?.phase} / ${owner.snapshot()?.detail}`);
   };
-  return { owner, child, root, host, frame, chapter, tail, advance, until, route };
+  return { owner, child, root, host, frame, chapter, tail, advance, until, route,
+    setDeny(value) { denied = value; } };
 }
 
 test("textbook text hands off to the nested Word reader, then resumes trailing text without restarting", async () => {
@@ -477,4 +486,99 @@ test("a bound text Word renderer can become a document viewer without losing its
   await until(() => child.outbound.some(message => message.type === "ENGINE_EMBEDDED_DONE"));
   assert.equal(child.reader.scrollTop, 1470);
   await until(() => host.scrollTop > textbookPosition);
+});
+
+test("a Word frame that cannot be injected yet is retried with backoff instead of freezing the textbook", async () => {
+  const state = fixture({ deny: true });
+  const { owner, child, frame, host, advance, until } = state;
+  const requests = () => owner.outbound.filter(message => message.type === "ENGINE_EMBEDDED_REQUEST").length;
+  await owner.ask("ENGINE_RUN", { settings, runId: "word-denied", resetPosition: true });
+  await until(() => requests() === 1);
+  const heldPosition = host.scrollTop;
+  await advance(300);
+  assert.equal(owner.snapshot().phase, "blocked");
+  assert.match(owner.snapshot().detail, /内嵌|权限/);
+  assert.equal(owner.snapshot().flow.embeddedActive, false, "a refused connection is released instead of retried by hand");
+  await advance(3200);
+  assert.equal(requests(), 1, "the first reconnect waits for its backoff delay");
+  await until(() => requests() === 2);
+  assert.equal(host.scrollTop, heldPosition, "the textbook keeps its position while the Word frame is unreachable");
+  assert.equal(child.reader.scrollTop, 0, "no Word run starts before the frame is actually granted");
+  state.setDeny(false);
+  await until(() => requests() === 3);
+  await until(() => child.reader.scrollTop > 0);
+  assert.equal(host.scrollTop, heldPosition, "reading continues inside the Word frame once it is granted");
+  assert.equal(owner.snapshot().flow.embeddedActive, true);
+  await until(() => child.outbound.some(message => message.type === "ENGINE_EMBEDDED_DONE"));
+  await until(() => host.scrollTop > heldPosition);
+  void frame;
+});
+
+test("a Word frame that never becomes reachable is skipped so the textbook keeps reading", async () => {
+  const state = fixture({ deny: true });
+  const { owner, host, advance, until } = state;
+  const requests = () => owner.outbound.filter(message => message.type === "ENGINE_EMBEDDED_REQUEST").length;
+  await owner.ask("ENGINE_RUN", { settings, runId: "word-stuck", resetPosition: true });
+  await until(() => requests() >= 1);
+  const held = host.scrollTop;
+  await advance(70000);
+  assert.ok(requests() >= 5, `expected repeated attempts, saw ${requests()}`);
+  assert.equal(owner.snapshot().flow.embeddedActive, false, "a permanently unreachable document is released");
+  assert.ok(owner.snapshot().flow.playedMediaIds.length >= 1, "the skipped step is recorded as handled");
+  assert.notEqual(owner.snapshot().phase, "blocked", "the task keeps reading instead of blocking forever");
+  await until(() => host.scrollTop > held || owner.snapshot().phase === "waiting_completion", 60);
+});
+
+test("a player frame that has no room to be centered is still handed over and finishes the chapter", async () => {
+  const owner = createContent();
+  const child = createContent({ type: "video" });
+  const root = owner.context.document.scrollingElement;
+  Object.assign(root, { clientHeight: 935, scrollHeight: 1384, scrollTop: 149 });
+  owner.context.innerHeight = 935;
+  owner.main.className = "reader-web";
+  const host = element("div", "", { id: "reader-container" });
+  host.className = "reader-container";
+  Object.assign(host, { offsetTop: 56, clientHeight: 664, scrollHeight: 1600 });
+  host.style.overflowY = "auto";
+  const chapter = element("div", "播放器前的教材正文。".repeat(120), { id: "chapter-with-player" });
+  chapter.className = "reader-chapter-content w-e-text";
+  Object.assign(chapter, { clientHeight: 1600, scrollHeight: 1600 });
+  const text = element("p", "播放器前的教材正文。".repeat(60));
+  Object.assign(text, { offsetTop: 0, clientHeight: 1200, scrollHeight: 1200 });
+  const frame = element("iframe", "", { id: "player-embed", src: "https://player.huawei.example/embed" });
+  frame.className = "insertH5 cres";
+  Object.assign(frame, { offsetTop: 1200, clientHeight: 600, scrollHeight: 600, contentWindow: child.context });
+  append(root, [owner.main]); append(owner.main, [host]); append(host, [chapter]); append(chapter, [text, frame]);
+  installTreeQueries(owner);
+  owner.context.document.title = "章节末尾的内嵌播放器";
+  child.context.location = new URL("https://player.huawei.example/embed");
+  child.context.parent = owner.context;
+  child.context.top = owner.context;
+  child.context.postMessage = message => child.emitWindow("message", { data: message, source: owner.context });
+  const advance = async milliseconds => {
+    for (let step = 0; step < milliseconds; step += 100) {
+      await owner.clock.advance(Math.min(100, milliseconds - step));
+      await child.clock.advance(Math.min(100, milliseconds - step));
+    }
+  };
+  const until = async condition => {
+    for (let step = 0; step < 600 && !condition(); step++) await advance(100);
+    assert.ok(condition(), `condition not reached: ${owner.snapshot()?.phase} / ${owner.snapshot()?.detail}`);
+  };
+  await owner.ask("ENGINE_RUN", { settings, runId: "player-embed-tail", resetPosition: true });
+  await until(() => owner.outbound.some(message => message.type === "ENGINE_EMBEDDED_REQUEST"));
+  assert.equal(host.scrollTop, host.scrollHeight - host.clientHeight, "the chapter bottom is reached before the player is opened");
+  const rect = frame.getBoundingClientRect();
+  const portRect = host.getBoundingClientRect();
+  assert.ok(Math.abs(rect.top + rect.height / 2 - (portRect.top + portRect.height / 2)) > 90, "the player cannot be centered there");
+  const request = owner.outbound.find(message => message.type === "ENGINE_EMBEDDED_REQUEST");
+  assert.equal(host.scrollTop, host.scrollHeight - host.clientHeight, "the textbook stays where the player is visible");
+  const heldPosition = host.scrollTop;
+  await owner.ask("ENGINE_EMBEDDED_RETURN", { token: request.token, runId: request.runId, ok: true,
+    snapshot: { ...owner.snapshot(), flow: { videosCompleted: 1 } } });
+  await advance(1500);
+  assert.equal(owner.snapshot().flow.embeddedActive, false, "the finished player releases the chapter");
+  assert.notEqual(owner.snapshot().phase, "blocked");
+  assert.equal(host.scrollTop, heldPosition);
+  assert.equal(owner.outbound.filter(message => message.type === "ENGINE_EMBEDDED_REQUEST").length, 1);
 });

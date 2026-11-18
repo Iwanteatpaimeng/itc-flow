@@ -416,6 +416,18 @@ test("a player that cannot be centered never starts automatically", async () => 
   assert.match(engine.snapshot().detail, /居中|中间|滚动|可视/);
 });
 
+test("a video that already ended outside the reading area is released instead of blocking the task", async () => {
+  const engine = createContent({ type: "video", mediaTop: 1800 });
+  engine.media.ended = true;
+  engine.media.currentTime = engine.media.duration;
+  await engine.ask("ENGINE_RUN");
+  await engine.clock.advance(15_000);
+  assert.equal(engine.media.playCalls, 0, "a finished video is never replayed just to unblock the flow");
+  assert.equal(doneCount(engine), 0);
+  assert.doesNotMatch(engine.snapshot().detail, /无可继续向下滚动/);
+  assert.equal(engine.snapshot().phase, "waiting_completion");
+});
+
 test("pause and stop cancel deferred video centering and autoplay", async () => {
   for (const action of ["ENGINE_PAUSE", "ENGINE_STOP"]) {
     const engine = createContent({ type: "video", mediaTop: 1800 });

@@ -52,6 +52,7 @@
   const CATALOG_SELECTOR = "nav,aside,[role='navigation'],[role='tree'],.course-catalog,.catalog-list,.chapter-list,.reader-catalog,.reader-left,.catalog-tree,.book-catalog,.book-menu,.toc,.toc-container,.document-outline,.el-tree,.ant-tree";
   const MANUAL_TASK = /(?:考试|测验|测试题|章节测试|随堂测试|随堂练习|章节练习|习题|练习题|考核|实操|实验任务|实验指导|在线实验|直播|问卷|quiz|exam|assessment|live\s*(?:class|session)|hands.on\s*lab)/i;
   const NEXT_TEXT = /^(?:下一(?:个)?(?:项(?:任务)?|节|课|章|讲|任务|章节|视频|课时|单元)|下(?:一)?节(?:课)?|下一个|继续学习|next(?:\s+(?:lesson|task|chapter|video|unit))?)[\s›»→>]*$/i;
+  const EMBEDDED_MAX_ATTEMPTS = 4;
   let settings = { ...DEFAULTS, selectors: { ...DEFAULTS.selectors } };
   let current = null;
   let running = false;
@@ -92,6 +93,8 @@
   let embeddedBinding = null;
   let embeddedCheckpoint = null;
   let pendingEmbeddedToken = null;
+  let embeddedTimer = null;
+  let embeddedRetryTimer = null;
   const documentScrollHosts = new WeakMap();
   const documentScrollProxies = new WeakSet();
   let flowGuardCleanup = null;
@@ -241,7 +244,8 @@
         scrollScheduled: scrollTimer !== null, verifyingScroll: scrollVerifyTimer !== null,
         nextInSeconds: nextScrollAt ? Math.max(0, (nextScrollAt - performance.now()) / 1000) : null,
         expandingVideo: Boolean(flow?.expandingMedia), needsReadingStep: Boolean(flow?.expansionNeedsStep),
-        activeVideo: Boolean(activeMedia), delegated: Boolean(flow?.embedded) },
+        activeVideo: Boolean(activeMedia), delegated: Boolean(flow?.embedded),
+        trace: Array.isArray(flow?.trace) ? flow.trace.slice(-16) : [] },
       media: videos.slice(0, 8).map((media, index) => {
         const rect = plainRect(media.getBoundingClientRect());
         const disclosure = textbookDisclosure(media);
@@ -589,9 +593,32 @@
     return hash(`${element.tagName}|${source}|${explicit || ordinal}`);
   }
 
+  function readingPortFor(element) {
+    // A folded player sits inside a zero-height clip, which collapses the derived
+    // port. The position test still needs the real reading port.
+    const port = viewportBounds(element);
+    if (validRect(port)) return port;
+    const rootPort = viewportBounds(flow?.root || document.scrollingElement);
+    if (validRect(rootPort)) return rootPort;
+    const size = viewportSize();
+    return { left: 0, top: 0, width: size.width, height: size.height };
+  }
+
+  function mediaPassed(item) {
+    // The flow only moves downward. A media that ended up entirely above the
+    // reading port can never be centered again, so it must not block every later
+    // step (and must not be replayed when the lesson starts at a chosen chapter).
+    const rect = item.getBoundingClientRect?.();
+    if (!rect) return false;
+    const port = readingPortFor(item);
+    if (!(port.height > 0)) return false;
+    // A folded textbook player still reports its position through its layout box.
+    return rect.height > 0 ? rect.bottom < port.top - 8 : rect.top < port.top - 8;
+  }
+
   function nextFlowMedia() {
     const items = pageMedia();
-    return items.find(item => !flow.played.has(mediaId(item, items))) || null;
+    return items.find(item => !flow.played.has(mediaId(item, items)) && !mediaPassed(item)) || null;
   }
 
   function flowReaders() {
@@ -777,13 +804,37 @@
     return targets.find(reached) || targets[0];
   }
 
+  function chapterStartAnchor() {
+    // A digital textbook stacks every chapter in one scrolling host, and the
+    // platform already shows the chapter the learner selected. Restarting must
+    // begin at that chapter, not at the first chapter of the whole book.
+    const port = viewportBounds(flow?.root || document.scrollingElement);
+    if (!(port.height > 0)) return null;
+    const middle = port.top + port.height / 2;
+    let best = null, bestDistance = Infinity;
+    for (const reader of flowReaders()) {
+      const rect = reader.getBoundingClientRect();
+      if (!(rect.height > 0)) continue;
+      const distance = Math.abs(rect.top + rect.height / 2 - middle);
+      if (distance < bestDistance) { bestDistance = distance; best = reader; }
+    }
+    return best;
+  }
+
   function resetFlowPosition() {
+    const chapter = digitalTextbookHost(flow?.root) ? chapterStartAnchor() : null;
     for (const target of flowTargets()) {
-      if (target.scrollTop <= 0) continue;
-      try { target.scrollTo({ top: 0, behavior: "instant" }); } catch { target.scrollTop = 0; }
+      let top = 0;
+      if (chapter && target.contains(chapter)) {
+        const max = Math.max(0, target.scrollHeight - target.clientHeight);
+        top = Math.min(max, Math.max(0, target.scrollTop + chapter.getBoundingClientRect().top - target.getBoundingClientRect().top - 8));
+      }
+      if (target.scrollTop <= top + 0.5) continue;
+      try { target.scrollTo({ top, behavior: "instant" }); } catch { target.scrollTop = top; }
     }
     for (const media of pageMedia()) {
       if (media.tagName !== "VIDEO") continue;
+      if (chapter && !chapter.contains(media)) continue;
       try { media.pause(); media.currentTime = 0; } catch { /* Not seekable until loaded. */ }
     }
   }
@@ -802,6 +853,19 @@
     return "继续按设定间隔向下阅读本项后续内容";
   }
 
+  function traceFlow(action) {
+    // A short, redacted ring buffer of reading decisions so a real page can be
+    // diagnosed without attaching a debugger to the learner's browser.
+    if (!flow) return;
+    if (!Array.isArray(flow.trace)) flow.trace = [];
+    const media = nextFlowMedia();
+    let position = null;
+    try { position = Math.round(Number(readingScrollTarget()?.scrollTop) || 0); } catch { position = null; }
+    flow.trace.push({ at: Math.round(performance.now() / 1000), phase, scroll: scrollState, action, position,
+      media: media ? { tag: media.tagName, id: String(media.getAttribute?.("id") || "").slice(0, 40), passed: mediaPassed(media) } : null });
+    if (flow.trace.length > 40) flow.trace.splice(0, flow.trace.length - 40);
+  }
+
   function finishEmbedded() {
     if (!embeddedBinding || !running || completed) return;
     completed = true; running = false; clearTimers();
@@ -811,17 +875,81 @@
     if (flowGuardCleanup) { flowGuardCleanup(); flowGuardCleanup = null; }
   }
 
+  function embeddedFrameVisible(frame) {
+    // A nested document or player is a reading step of its own: it only has to be
+    // shown inside the reading port, not perfectly centered like a video surface.
+    const rect = plainRect(frame.getBoundingClientRect());
+    const port = viewportBounds(frame);
+    if (!(port.width > 0 && port.height > 0)) return false;
+    const overlapWidth = Math.min(rect.left + rect.width, port.left + port.width) - Math.max(rect.left, port.left);
+    const overlapHeight = Math.min(rect.top + rect.height, port.top + port.height) - Math.max(rect.top, port.top);
+    return { rect, port, overlapWidth, overlapHeight,
+      enough: overlapWidth >= Math.min(rect.width, port.width) * 0.5 && overlapHeight >= Math.min(120, rect.height, port.height) };
+  }
+
+  function embeddedRetryDelay(attempts) {
+    // A refused or unanswered embed must not freeze reading; retry with a bounded
+    // backoff so granting the site permission resumes the same document.
+    return Math.min(30000, 4000 * 2 ** Math.min(3, Math.max(0, attempts - 1)));
+  }
+
+  function scheduleEmbeddedRetry() {
+    clearTimeout(embeddedRetryTimer); embeddedRetryTimer = null;
+    if (!running || paused || completed || !flow || !flow.embeddedAttemptId) return;
+    flow.embeddedRetryAt = performance.now() + embeddedRetryDelay(flow.embeddedAttempts || 1);
+    embeddedRetryTimer = setTimeout(() => {
+      embeddedRetryTimer = null;
+      if (!running || paused || completed || !flow || flow.embedded || activeMedia) return;
+      flow.embeddedRetryAt = 0;
+      evaluateFlow();
+      if (!flow?.embedded) report(true);
+    }, embeddedRetryDelay(flow.embeddedAttempts || 1));
+  }
+
+  function releaseEmbedded(nextDetail) {
+    const embedded = flow?.embedded;
+    if (!embedded) return;
+    clearTimeout(embeddedTimer); embeddedTimer = null;
+    embedded.cleanup?.();
+    flow.embedded = null;
+    if (flow.embeddedAttemptId === embedded.id) flow.embeddedAttempts = (flow.embeddedAttempts || 0) + 1;
+    if (flow.embeddedAttempts > EMBEDDED_MAX_ATTEMPTS) {
+      // Repeated failures must not pin the whole task to one document. Keep the
+      // reason visible, treat the step as done and let the reader continue.
+      traceFlow("release-giveup");
+      flow.played.add(embedded.id);
+      flow.embeddedAttemptId = null; flow.embeddedAttempts = 0; flow.embeddedRetryAt = 0;
+      phase = "reading";
+      detail = "内嵌内容多次未能连接，已跳过这一步并继续后文；复制识别诊断可查看具体原因";
+      scheduleScroll(); report(true); return;
+    }
+    phase = "blocked";
+    detail = nextDetail || "内嵌内容尚未连接，稍后自动重试；当前阅读位置已保留";
+    scheduleEmbeddedRetry();
+    report(true);
+  }
+
   function startEmbedded(frame) {
     if (!flow || flow.embedded) return;
     clearTimeout(scrollTimer); scrollTimer = null; nextScrollAt = 0;
     clearTimeout(scrollVerifyTimer); scrollVerifyTimer = null;
+    clearTimeout(embeddedRetryTimer); embeddedRetryTimer = null;
+    flow.embeddedRetryAt = 0;
     for (const target of activeScrollTargets) {
       try { target.scrollTo({ top: target.scrollTop, behavior: "instant" }); } catch { /* Detached reader. */ }
     }
     activeScrollTargets.clear();
     const token = globalThis.crypto?.randomUUID?.() || `${Date.now()}-${Math.random().toString(36).slice(2)}-${mediaGateGeneration}`;
-    flow.embedded = { element: frame, token, id: mediaId(frame), deadline: performance.now() + 12000 };
+    const id = mediaId(frame);
+    if (flow.embeddedAttemptId !== id) { flow.embeddedAttemptId = id; flow.embeddedAttempts = 0; }
+    flow.embedded = { element: frame, token, id, deadline: performance.now() + 12000, answered: false };
     const embedded = flow.embedded;
+    embeddedTimer = setTimeout(() => {
+      embeddedTimer = null;
+      if (flow?.embedded !== embedded || embedded.answered) return;
+      // The frame never paired back: retry instead of leaving the textbook frozen.
+      releaseEmbedded("内嵌内容尚未响应，正在自动重试连接；当前阅读位置已保留");
+    }, 12000);
     const rebind = () => {
       if (!running || paused || flow?.embedded !== embedded) return;
       // Navigating a document iframe replaces its content script. Reconnect
@@ -932,17 +1060,46 @@
     }
     if (media && !disclosure && !flow.expansionNeedsStep && !hasUnreadReaderBefore(media)) {
       const rect = plainRect(media.getBoundingClientRect());
-      if (centeredRect(rect, media) && unclippedRect(media, rect)) {
+      const centered = centeredRect(rect, media) && unclippedRect(media, rect);
+      if (media.tagName === "IFRAME") {
+        const visibility = embeddedFrameVisible(media);
+        const atEnd = !nextFlowTarget();
+        if (Number(flow.embeddedRetryAt) > performance.now() && flow.embeddedAttemptId === mediaId(media)) {
+          // A refused or silent frame reconnects on its own backoff schedule. The
+          // one-second tick must not send a fresh request on every pass.
+          clearTimeout(scrollTimer); scrollTimer = null; nextScrollAt = 0;
+          phase = "blocked"; report(true); return;
+        }
+        if (centered || atEnd && visibility.overlapWidth >= 1 && visibility.overlapHeight >= 1) {
+          // A Word document or a standalone player is a reading step of its own.
+          // Hand that step to the frame; the last element of a chapter can never be
+          // centered, so an exact center must not be required to enter it.
+          clearTimeout(scrollTimer); scrollTimer = null; nextScrollAt = 0;
+          traceFlow(centered ? "delegate-centered" : "delegate-at-end");
+          startEmbedded(media);
+          report(true);
+          return;
+        }
+      } else if (centered) {
         clearTimeout(scrollTimer); scrollTimer = null; nextScrollAt = 0;
-        if (media.tagName === "IFRAME") startEmbedded(media);
-        else { activeMedia = media; phase = "centering"; scrollState = "video"; watchMedia(media); }
+        activeMedia = media; phase = "centering"; scrollState = "video"; traceFlow("play"); watchMedia(media);
         report(true);
         return;
       }
     }
     const target = nextFlowTarget();
     if (media && !target) {
+      if (media.tagName === "VIDEO" && media.ended) {
+        // An already finished video that sits outside the reading area has nothing
+        // left to play; release it so the page can continue instead of freezing.
+        flow.played.add(mediaId(media));
+        traceFlow("release-ended");
+        scrollState = "bottom";
+        clearTimeout(scrollTimer); scrollTimer = null; nextScrollAt = 0;
+        scheduleScroll(); report(true); return;
+      }
       phase = "blocked"; scrollState = "no_target";
+      traceFlow("blocked-no-target");
       detail = "课程区域已无可继续向下滚动的空间，尚未处理的视频无法位于阅读区域中间；请手动调整页面或播放器位置后重新识别";
       report(true); return;
     }
@@ -1039,6 +1196,8 @@
     clearInterval(timerId); timerId = null;
     clearTimeout(scrollTimer); scrollTimer = null;
     clearTimeout(scrollVerifyTimer); scrollVerifyTimer = null;
+    clearTimeout(embeddedTimer); embeddedTimer = null;
+    clearTimeout(embeddedRetryTimer); embeddedRetryTimer = null;
     nextScrollAt = 0;
     clearTimeout(mediaGateTimer); mediaGateTimer = null;
     mediaGateGeneration += 1;
@@ -1277,6 +1436,7 @@
         // DOM rectangles use visual pixels; scrollTop uses the host's layout units.
         if (remainingToCenter > 0) next = Math.min(next, before + remainingToCenter / scaleY);
       }
+      traceFlow(`scroll ${Math.round(before)}→${Math.round(next)}`);
       const reduced = matchMedia("(prefers-reduced-motion: reduce)").matches;
       const taskKey = current.key;
       readingScrollVerified = false;
@@ -1743,8 +1903,9 @@
     flow = { root: current.flowElement || current.element, frameTransport: current.frameTransport,
       played: new Set(matchingCheckpoint && Array.isArray(checkpoint.flow?.playedMediaIds) ? checkpoint.flow.playedMediaIds : []),
       videosCompleted: matchingCheckpoint ? Math.max(0, Number(checkpoint.flow?.videosCompleted) || 0) : 0, embedded: null,
+      embeddedAttemptId: null, embeddedAttempts: 0, embeddedRetryAt: 0,
       resumeEmbeddedId: matchingCheckpoint ? checkpoint.flow?.embeddedMediaId || null : null, guards: new Map(),
-      disclosures: new WeakSet(), expandingMedia: null, expansionNeedsStep: false };
+      disclosures: new WeakSet(), expandingMedia: null, expansionNeedsStep: false, trace: [] };
     flow.scrollRoot = courseScrollRoot();
     if (resetPosition) resetFlowPosition();
     lastTick = performance.now();
@@ -1752,6 +1913,7 @@
     const guarded = flow.guards;
     flowGuardCleanup = () => { for (const [media, listener] of guarded) media.removeEventListener("playing", listener); };
     phase = "reading"; detail = flowDetail();
+    traceFlow("run");
     evaluateFlow();
     scheduleScroll();
     if (running) timerId = setInterval(tick, 1000);
@@ -1972,6 +2134,8 @@
           const embedded = flow?.embedded;
           if (!running || !embedded || message.runId !== activeRunId || message.token !== embedded.token || !message.snapshot) { respond({ ok: true }); break; }
           embedded.deadline = Infinity;
+          embedded.answered = true;
+          clearTimeout(embeddedTimer); embeddedTimer = null;
           embedded.snapshot = message.snapshot;
           phase = message.snapshot.phase || "waiting";
           detail = message.snapshot.detail || "正在处理内嵌课程内容";
@@ -1980,11 +2144,18 @@
         case "ENGINE_EMBEDDED_RETURN": {
           const embedded = flow?.embedded;
           if (!running || !embedded || message.runId !== activeRunId || message.token !== embedded.token) { respond({ ok: true }); break; }
-          if (!message.ok) { phase = "blocked"; detail = message.detail || "内嵌内容未完成，请检查页面连接"; report(true); respond({ ok: true }); break; }
+          if (!message.ok) {
+            // Not started (permission refused, frame not injected yet) or aborted:
+            // keep the position, reconnect later, never leave the textbook frozen.
+            releaseEmbedded(message.detail || "内嵌内容未完成，正在自动重试连接");
+            respond({ ok: true }); break;
+          }
+          clearTimeout(embeddedTimer); embeddedTimer = null;
           flow.played.add(embedded.id);
           embedded.cleanup?.();
           flow.videosCompleted += Math.max(0, Number((message.snapshot || embedded.snapshot)?.flow?.videosCompleted) || 0);
           flow.embedded = null; phase = "reading"; scrollState = "scheduled";
+          flow.embeddedAttemptId = null; flow.embeddedAttempts = 0;
           detail = "内嵌内容已结束，继续阅读同一页面下方内容";
           scheduleScroll(); report(true); respond({ ok: true }); break;
         }
