@@ -1,0 +1,25 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>数字教材章节衔接验证</title>
+  <style>
+    *{box-sizing:border-box}html,body{height:100%;margin:0;overflow:hidden}body{font:14px/1.55 "Segoe UI","Microsoft YaHei",sans-serif;background:#edf2f8;color:#172033}
+    header{padding:12px 18px;background:white;border-bottom:1px solid #a7bde1}header p{margin:2px 0}button{font:inherit;border:1px solid #9db3d7;border-radius:6px;background:white;padding:5px 9px;margin:4px 5px 4px 0;cursor:pointer}button:disabled{opacity:.45;cursor:wait}output{display:block;font-size:12px;white-space:pre-wrap;overflow-wrap:anywhere}nav{position:absolute;left:12px;top:260px;width:145px}nav button{display:block;width:140px}nav .active{background:#dceaff;border-color:#3974df}
+    .reader-web{position:absolute;inset:252px 176px 16px 172px}.reader-wrapper{height:100%;padding-top:20px;background:white;border:1px solid #9db3d7;overflow:hidden}#reader-container{height:calc(100% - 20px);overflow:auto;border:2px solid #3974df;padding:18px 24px;overflow-anchor:none}#reader-chapter-box{overflow:visible}.reader-chapter-content{overflow:visible;font-size:16px;line-height:1.8}.reader-chapter-content h1{font-size:21px;margin:0 0 14px}.reader-chapter-content h2{font-size:19px;margin:20px 0 12px}.reader-chapter-content p{margin:0 0 20px}.td{display:block;margin:14px 0 24px;border:1px solid #a7bde1;background:#f1f6ff}.insertVideoCheck{position:absolute;width:1px;height:1px;opacity:0}.videoTitlepc-new{display:block;min-height:50px;padding:10px 14px;font-weight:600;color:#2453a9}.videoTitlepc-new label{display:block;cursor:pointer}.element-new{display:block;height:0;overflow:hidden}.element-new.is-open{height:270px}video{display:block;width:100%;height:260px;background:#172033;object-fit:contain}#trace{position:absolute;right:10px;top:260px;width:154px;bottom:18px;overflow:auto;background:#172033;color:#dbeafe;padding:8px;font:10px/1.45 monospace}.reader-spacer{pointer-events:none}
+    @media(max-width:900px){.reader-web{left:140px;right:148px}nav{width:120px}nav button{width:120px}#trace{width:130px}header{font-size:12px}button{padding:4px 6px}}
+  </style>
+</head>
+<body>
+  <header>
+    <strong>同一阅读器的章节回收、菜单更新和视频衔接</strong>
+    <p>本地虚构文字与浏览器生成的短视频。第一章读过后替换为空白占位，保留同一个 #reader-container。</p>
+    <div><button id="start" disabled>开始连续章节验证</button><button id="pause">暂停</button><button id="resume">继续</button><button id="restart" disabled>重新开始</button><button id="recycle">立即回收第一章（测试）</button><button id="route">切换整项路由（测试）</button><label><input id="complete" type="checkbox">本地平台确认完成</label></div>
+    <output id="state">本地视频正在生成</output><output id="identity">等待真实内容脚本状态</output><output id="geometry">布局准备中</output><output id="counters">RUN 0 · CHANGE 0 · STOP 0 · 回收 0 · 视频完成 0</output><output id="timing">等待计时</output>
+  </header>
+  <nav aria-label="章节菜单"><button class="task-item active" data-task-id="chapter-one">当前章：发送</button><button class="task-item" data-task-id="chapter-two">下一章：接收</button></nav>
+  <div class="reader-web"><div class="reader-wrapper"><div id="reader-container" class="reader-container"><div id="reader-chapter-box"></div></div></div></div>
+  <output id="trace">真实 content.js 集成验证</output>
+  <script src="chapter-continuity.js"></script><script src="/shared.js"></script><script src="/content.js"></script>
+</body>
+</html>

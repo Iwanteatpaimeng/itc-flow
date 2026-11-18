@@ -1,0 +1,57 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>多层隐藏壳与实际正文滚动验证</title>
+  <style>
+    * { box-sizing: border-box; }
+    html { overflow-y: scroll; }
+    body { margin: 0; min-height: 2000px; background: repeating-linear-gradient(#edf2f8 0 140px,#e1e9f4 140px 280px); color: #172033; font: 15px/1.6 "Segoe UI",sans-serif; }
+    header { position: fixed; z-index: 30; inset: 0 0 auto; padding: 14px 24px; background: #fffffff5; border-bottom: 1px solid #9fb1ca; }
+    header strong { font-size: 18px; }
+    header p { margin: 5px 0; }
+    button { padding: 8px 14px; margin: 5px 8px 5px 0; font: inherit; border: 1px solid #9fb1ca; border-radius: 8px; background: white; cursor: pointer; }
+    output { display: block; font-size: 13px; }
+    aside { position: fixed; left: 20px; top: 250px; width: 220px; bottom: 24px; background: white; border: 1px solid #b7c7dc; border-radius: 12px; padding: 18px; }
+    .task-item { width: 100%; text-align: left; background: #edf3ff; border-color: #245eea; }
+    main { position: fixed; top: 250px; right: 24px; left: 260px; bottom: 24px; background: white; border: 1px solid #b7c7dc; border-radius: 12px; padding: 16px 22px; }
+    main h1 { font-size: 20px; margin: 0 0 10px; }
+    .learning-content { position: relative; height: min(430px, calc(100vh - 345px)); min-height: 180px; overflow: hidden; border: 2px solid #d19d4d; border-radius: 8px; }
+    .hidden-surface { height: 100%; overflow: hidden; }
+    .simplebar-content-wrapper { height: 100%; overflow: auto; padding: 18px 24px; border: 2px solid #4e7bd9; }
+    .ql-editor { font-size: 17px; line-height: 1.9; }
+    .ql-editor p { margin: 0 0 26px; }
+    .shell-excess { height: 1170px; background: #fff7e9; }
+    .reader-toolbar { position: absolute; inset: 0 0 auto auto; width: 16px; height: 150px; overflow: auto; opacity: .25; }
+    .reader-toolbar div { height: 1500px; }
+    #nestedTrace { position: fixed; z-index: 40; left: 28px; bottom: 32px; width: 204px; max-height: 240px; overflow: auto; white-space: pre-wrap; background: #101827ee; color: #dbeafe; padding: 12px; border-radius: 8px; font: 11px/1.5 monospace; pointer-events: none; }
+    @media(max-width:760px) { aside { display:none; } main { left:12px; right:12px; } #nestedTrace { width:300px; max-height:100px; left:18px; } header { font-size:12px; padding:10px 14px; } button { padding:5px 8px; } }
+  </style>
+</head>
+<body>
+  <header>
+    <strong>布局隐藏壳与实际正文：只允许蓝框内部向下滚动</strong>
+    <p>结构：课程 main → 橙色 hidden 壳 → 第二层 hidden 壳 → 蓝色 auto 正文容器 → 富文本编辑器。外页也有可滚范围。</p>
+    <div><button id="nestedStart">开始识别并滚动</button><button id="nestedPause">暂停</button><button id="nestedResume">继续</button><button id="nestedRestart">重新开始</button><button id="nestedStop">停止</button></div>
+    <label><input id="nestedCustomRoot" type="checkbox"> 指定橙壳为滚动边界（正文仍在蓝框）</label>
+    <label><input id="nestedCustomDocument" type="checkbox"> 单独指定正文元素</label>
+    <label><input id="nestedComplete" type="checkbox"> 模拟平台确认完成</label>
+    <output id="nestedPositions">布局加载中</output>
+    <output id="nestedState">等待开始</output>
+    <output id="nestedCount">已完成任务：0</output>
+  </header>
+  <aside aria-label="课程目录"><h2>课程目录</h2><nav><button class="task-item active" data-task-id="nested-local-reader" data-type="text" aria-current="true">多层正文阅读器</button></nav><p>真实正文滚动数值应增加；两层隐藏壳和外页保持原位。</p></aside>
+  <main class="course-content">
+    <h1>独立富文本正文阅读器</h1>
+    <section class="learning-content simplebar-wrapper" id="layoutShell">
+      <div class="hidden-surface" id="hiddenSurface">
+        <div class="simplebar-content-wrapper" id="actualReader"><article class="ql-editor" id="actualText"></article><strong id="nestedCompleteMarker" hidden>当前任务已完成</strong></div>
+      </div>
+      <div class="shell-excess" aria-hidden="true"></div>
+      <div class="reader-toolbar" role="toolbar" aria-label="阅读工具"><div>工具</div></div>
+    </section>
+  </main>
+  <output id="nestedTrace">本页仅验证本地布局容器</output>
+  <script src="nested-reader.js"></script><script src="/shared.js"></script><script src="/content.js"></script>
+</body>
+</html>

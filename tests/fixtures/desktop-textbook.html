@@ -1,0 +1,61 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>桌面数字教材滚动与视频验证</title>
+  <style>
+    * { box-sizing:border-box; }
+    html,body { margin:0; height:100%; overflow:hidden; }
+    body { background:#edf2f8; color:#172033; font:14px/1.6 "Segoe UI","Microsoft YaHei",sans-serif; }
+    header { position:fixed; z-index:10; inset:0 0 auto; padding:12px 20px; background:#fffffff5; border-bottom:1px solid #9fb1ca; }
+    header strong { font-size:18px; } header p { margin:3px 0; }
+    button { padding:6px 11px; margin:4px 6px 4px 0; border:1px solid #9fb1ca; border-radius:7px; background:white; cursor:pointer; font:inherit; }
+    input[type=number] { width:52px; } output { display:block; font-size:12px; line-height:1.5; }
+    #app { position:fixed; inset:220px 18px 18px; overflow:hidden; }
+    #appWrapper,#readerBox,.reader-web,.reader-ehep-web,.reader-outer,.reader-right,.reader-wrapper { height:100%; }
+    #appWrapper,.reader-outer,.reader-right { overflow:hidden; }
+    .reader-wrapper { overflow:auto; padding-top:24px; background:white; border:1px solid #9fb1ca; }
+    etextbook-reader-web { display:contents; }
+    #reader-container { height:calc(100% - 24px); overflow-x:hidden; overflow-y:auto; border:2px solid #3d72d7; padding:20px 26px; }
+    #reader-chapter-box { overflow:visible; }
+    .reader-chapter-content.w-e-text { overflow:visible; font-size:17px; line-height:1.9; }
+    .reader-chapter-content p { margin:0 0 24px; }
+    .reader-chapter-content h1 { font-size:23px; margin:0 0 14px; }
+    .reader-chapter-content h2 { font-size:20px; margin:18px 0 12px; }
+    span.td { display:block; margin:18px 0 28px; border:1px solid #a7bde1; background:#f1f6ff; }
+    .insertVideoCheck { position:absolute; width:1px; height:1px; opacity:0; }
+    .videoTitlepc-new { display:block; min-height:50px; padding:10px 16px; color:#1e52b5; cursor:pointer; }
+    .videoTitlepc-new label { display:block; cursor:pointer; font-weight:600; }
+    .element-new { display:block; height:0; overflow:hidden; }
+    .element-new.is-open { height:390px; }
+    video.insertVideo.cres { display:block; width:100%; height:381px; object-fit:contain; background:#111827; }
+    #desktopTrace { position:fixed; z-index:12; right:26px; bottom:27px; max-width:420px; max-height:125px; overflow:auto; white-space:pre-wrap; background:#101827ed; color:#dbeafe; padding:10px; font:11px/1.4 monospace; pointer-events:none; }
+    .embedded-mode header { display:none; } .embedded-mode #app { top:18px; }
+    .tall-reader .reader-wrapper { padding-top:0; border:0; overflow:hidden; }
+    .tall-reader #reader-container { height:668px; max-height:100%; }
+    @media(max-width:800px) { header { padding:10px; font-size:12px; } button { padding:4px 7px; } #app { left:10px;right:10px; } }
+  </style>
+</head>
+<body id="course-html" class="reader-body">
+  <header>
+    <strong>桌面数字教材：无 main / mobile 容器</strong>
+    <p>正文为 visible，真正滚动组件为 #reader-container。两段视频折叠；可延迟展开以跨越滚动计时。</p>
+    <div><label>间隔（秒）<input id="desktopInterval" type="number" min="1" max="30" value="1"></label><button id="desktopStart">从桌面教材顶部开始</button><button id="desktopPause">暂停</button><button id="desktopResume">继续</button><button id="desktopRestart">重新开始</button><button id="desktopStop">停止</button></div>
+    <label><input id="desktopDelay" type="checkbox" checked> 视频延迟 1.5 秒展开</label> <label><input id="desktopComplete" type="checkbox"> 模拟平台确认完成</label>
+    <output id="desktopState">等待开始</output><output id="desktopPositions">布局加载中</output><output id="desktopCountdown">等待滚动计时</output><output id="desktopVideos">本地视频生成中</output>
+  </header>
+  <div id="app"><div id="appWrapper"><div id="readerBox"><etextbook-reader-web>
+    <div class="reader-web"><div class="reader-ehep-web reader-web--bg-white"><div class="reader-outer"><div class="reader-right"><div class="reader-wrapper">
+      <div id="reader-container" class="reader-container"><div id="reader-chapter-box"><div class="reader-chapter-content w-e-text">
+        <h1>虚构桌面教材：数据的完整旅程</h1><section id="desktopIntro" data-reading="前置正文"></section>
+        <p><span class="td" id="video_td_span_desktop1"><input class="insertVideoCheck" id="check_desktop1" type="checkbox"><span class="videoTitlepc-new" id="video_title_span_desktop1"><label for="check_desktop1">▶ 本地演示一：数据发送</label></span><span class="element-new"><video class="insertVideo cres" id="desktop1" controls playsinline></video></span></span></p>
+        <h2>演示之后继续阅读</h2><section id="desktopMiddle" data-reading="夹心正文"></section>
+        <p><span class="td" id="video_td_span_desktop2"><input class="insertVideoCheck" id="check_desktop2" type="checkbox"><span class="videoTitlepc-new" id="video_title_span_desktop2"><label for="check_desktop2">▶ 本地演示二：数据接收</label></span><span class="element-new"><video class="insertVideo cres" id="desktop2" controls playsinline></video></span></span></p>
+        <h2>本页最后的总结</h2><section id="desktopTail" data-reading="尾部正文"></section><strong id="desktopCompleteMarker" hidden>平台确认当前任务完成</strong>
+      </div></div></div>
+    </div></div></div></div></div>
+  </etextbook-reader-web></div></div></div>
+  <output id="desktopTrace">本地虚构教材；所有媒体在浏览器内生成</output>
+  <script src="desktop-textbook.js"></script><script src="/shared.js"></script><script src="/content.js"></script>
+</body>
+</html>

@@ -1,0 +1,10 @@
+{
+  "name": "itc-study-companion",
+  "version": "1.2.9",
+  "private": true,
+  "description": "Edge 课程学习辅助扩展的本地验证工具",
+  "scripts": {
+    "test": "node --test tests/*.test.cjs",
+    "fixture": "node tests/serve-fixture.cjs"
+  }
+}

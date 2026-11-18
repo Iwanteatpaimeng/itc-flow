@@ -1,0 +1,77 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>ITC 学习助手 · Flow</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <div class="app-shell" id="appShell">
+    <header class="topbar">
+      <div class="brand">
+        <span class="brand-symbol" aria-hidden="true"><svg viewBox="0 0 28 28"><path d="M7 19V9h6.5M7 14h9M17 9v10h4" /></svg></span>
+        <div><p class="eyebrow">FLOW / STUDY COMPANION</p><h1>ITC 学习助手</h1></div>
+      </div>
+      <button class="icon-button glass-control" id="themeButton" type="button" title="跟随浏览器主题" aria-label="当前跟随浏览器主题，点击切换">
+        <svg class="icon" id="themeIcon" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4" width="18" height="13" rx="3"/><path d="M8 21h8m-4-4v4" /></svg>
+      </button>
+    </header>
+
+    <main>
+      <section class="intro" aria-labelledby="introTitle">
+        <div><p class="section-kicker"><span class="blue-dot" aria-hidden="true"></span> 少一点操作，多一点专注</p><h2 id="introTitle">让课程，自然继续<span class="blue-text">。</span></h2><p class="intro-note">自动识别 · 间隔滚动 · 连续播放</p></div>
+        <span class="orb" aria-hidden="true"><svg viewBox="0 0 40 40"><path d="m15 11 14 9-14 9Z"/></svg></span>
+      </section>
+
+      <section class="task-panel glass-panel" aria-labelledby="taskTitle">
+        <div class="section-heading"><span class="section-label">当前任务</span><span class="status-pill" id="phaseLabel" role="status"><span class="status-dot" aria-hidden="true"></span><span id="phaseText">准备就绪</span></span></div>
+        <div class="task-heading"><span class="task-type" id="taskType">自动识别</span><button class="text-button" id="rescanButton" type="button" title="重新识别当前页面">重新识别<svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M20 7v5h-5M4 17v-5h5"/><path d="M6.1 7.1A7 7 0 0 1 18.6 6L20 8M4 16l1.4 2A7 7 0 0 0 18 17"/></svg></button></div>
+        <h3 id="taskTitle">等待识别当前任务</h3>
+        <p class="task-detail" id="taskDetail">打开华为 ICT 学院课程，点击下方开始。</p>
+        <div class="frame-permission-row" id="framePermissionRow" hidden><button class="text-button" id="grantFramesButton" type="button"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M8 12V8a4 4 0 0 1 8 0v4"/><rect x="5" y="11" width="14" height="10" rx="3"/></svg><span>连接内嵌内容</span><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h14m-5-5 5 5-5 5"/></svg></button></div>
+        <div class="progress-heading"><span id="progressCaption">滚动基准间隔</span><span class="time-display" id="timeDisplay">00:10</span></div>
+        <div class="progress-track" id="taskProgress" role="progressbar" aria-label="下次滚动等待进度" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"><span id="progressFill"></span></div>
+        <div class="task-controls"><button class="primary-button" id="mainButton" type="button" disabled><svg class="icon" id="mainIcon" viewBox="0 0 24 24" aria-hidden="true"><path d="m9 5 11 7-11 7Z"/></svg><span id="mainLabel">连接中</span></button><button class="secondary-button restart-button" id="restartButton" type="button" title="回到当前任务顶部，清空本轮状态后重新开始" disabled><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 10a8 8 0 1 1 1.8 8.1M4 4v6h6"/></svg><span>重新开始</span></button><button class="icon-button stop-button" id="stopButton" type="button" aria-label="停止连续学习" title="停止连续学习" disabled><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><rect x="7" y="7" width="10" height="10" rx="2"/></svg></button></div>
+      </section>
+
+      <section class="behavior-panel glass-panel" aria-label="当前学习设置">
+        <div class="behavior-item"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><rect x="6" y="3" width="12" height="18" rx="3"/><path d="m9 10 3-3 3 3m-3-3v10"/></svg><span>阅读滚动<small id="scrollSummary">已开启</small></span></div>
+        <div class="behavior-divider" aria-hidden="true"></div>
+        <div class="behavior-item"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="m5 6 9 6-9 6Zm12 0v12"/></svg><span>自动下一项<small id="nextSummary">已开启</small></span></div>
+        <button class="icon-button compact-button" id="settingsButton" type="button" aria-label="打开学习设置" title="学习设置" aria-expanded="false" aria-controls="settingsDialog"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M4 17h16"/><circle cx="8" cy="7" r="3"/><circle cx="16" cy="17" r="3"/></svg></button>
+      </section>
+
+      <section class="recent-section" aria-labelledby="recentTitle"><div class="section-heading"><h2 id="recentTitle">本次记录</h2><span class="count-label"><strong id="completedCount">0</strong> 项已处理</span></div><div class="history-list" id="historyList"><p class="history-empty">下一段学习，从这里开始。</p></div></section>
+    </main>
+
+    <footer class="footer"><span class="connection-dot" id="connectionDot" aria-hidden="true"></span><span id="domainLabel">正在连接当前页面</span><span class="footer-local">仅本地运行</span></footer>
+  </div>
+
+  <div class="modal-backdrop" id="modalBackdrop" hidden>
+    <section class="settings-dialog glass-panel" id="settingsDialog" role="dialog" aria-modal="true" aria-labelledby="settingsTitle" tabindex="-1">
+      <div class="modal-heading"><div><p class="eyebrow">MAKE IT YOURS</p><h2 id="settingsTitle">学习设置</h2></div><button class="icon-button close-button" id="closeSettings" type="button" aria-label="关闭设置"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18"/></svg></button></div>
+      <form id="settingsForm">
+        <div class="settings-scroll">
+          <fieldset class="setting-block theme-block"><legend>外观</legend><div class="segmented" role="group" aria-label="外观主题"><label><input type="radio" name="theme" value="light"/><span>亮色</span></label><label><input type="radio" name="theme" value="dark"/><span>暗色</span></label><label><input type="radio" name="theme" value="system" checked/><span>跟随浏览器</span></label></div></fieldset>
+          <fieldset class="setting-block"><legend>页面滚动间隔</legend><div class="interval-field"><input id="scrollIntervalSeconds" name="scrollIntervalSeconds" aria-label="滚动基准间隔秒数" type="number" min="1" max="3600" step="1" value="10" required aria-describedby="intervalHint"/><span>秒 / 次</span></div><div class="preset-row" role="group" aria-label="常用滚动间隔"><button type="button" data-seconds="5">5 秒</button><button type="button" data-seconds="10">10 秒</button><button type="button" data-seconds="20">20 秒</button><button type="button" data-seconds="30">30 秒</button></div><p class="field-hint" id="intervalHint">每次等待约 9–11 秒，再向下滚动一段；不按时间完成任务。</p></fieldset>
+          <div class="toggle-list">
+            <label class="toggle-row"><span><strong>间隔向下滚动</strong><small>等待间隔小幅浮动，轻缓移动正文</small></span><span class="switch"><input type="checkbox" id="scrollEnabled" name="scrollEnabled" checked/><span class="switch-track"></span></span></label>
+            <label class="toggle-row"><span><strong>自动进入下一项</strong><small>平台确认当前任务完成后继续</small></span><span class="switch"><input type="checkbox" id="autoNext" name="autoNext" checked/><span class="switch-track"></span></span></label>
+            <label class="toggle-row"><span><strong>视频静音播放</strong><small>提高浏览器自动播放的成功率</small></span><span class="switch"><input type="checkbox" id="muteVideo" name="muteVideo" checked/><span class="switch-track"></span></span></label>
+          </div>
+          <p class="field-hint">从任务顶部逐段滚动；视频居中后停滚播放，播完继续同页内容。整项任务经平台确认完成后，才进入下一项。</p>
+          <label class="inline-field" for="nextDelaySeconds"><span>任务之间等待</span><span><input id="nextDelaySeconds" name="nextDelaySeconds" type="number" min="0" max="30" step="1" value="3" required/> 秒</span></label>
+          <details class="advanced-settings"><summary>网站适配 <span>可选</span><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="m8 10 4 4 4-4"/></svg></summary><p class="field-hint">默认自动识别。遇到不同版本页面，可填写 CSS 选择器覆盖对应元素。</p><label for="selectorVideo">视频元素<input id="selectorVideo" class="selector-input" maxlength="1000" placeholder="例如：video" autocomplete="off" spellcheck="false"/></label><label for="selectorDocument">正文 / 文档区域<input id="selectorDocument" class="selector-input" maxlength="1000" placeholder="例如：.document-viewer" autocomplete="off" spellcheck="false"/></label><label for="selectorScroll">实际滚动容器<input id="selectorScroll" class="selector-input" maxlength="1000" placeholder="数字教材：#reader-container" autocomplete="off" spellcheck="false" aria-describedby="scrollSelectorHint"/></label><p class="field-hint" id="scrollSelectorHint">填写包住正文、实际产生滚动的组件。已确认这门华为数字教材使用 #reader-container；默认可留空。修改此项后点击“重新开始”。</p><label for="selectorNext">下一项按钮<input id="selectorNext" class="selector-input" maxlength="1000" placeholder="例如：.next-task" autocomplete="off" spellcheck="false"/></label><label for="selectorTask">目录任务项<input id="selectorTask" class="selector-input" maxlength="1000" placeholder="例如：.course-task" autocomplete="off" spellcheck="false"/></label><label for="selectorActiveTask">当前目录任务<input id="selectorActiveTask" class="selector-input" maxlength="1000" placeholder="例如：.course-task.active" autocomplete="off" spellcheck="false"/></label><label for="selectorCompleted">当前任务完成标记<input id="selectorCompleted" class="selector-input" maxlength="1000" placeholder="例如：.course-task.active[data-completed='true']" autocomplete="off" spellcheck="false" aria-describedby="completedSelectorHint"/></label><p class="field-hint" id="completedSelectorHint">仅匹配当前任务处于“已完成”状态的元素，不能填写一直存在的任务容器或其他任务的完成标记。留空时使用自动识别；未识别到确认信号会等待。</p></details>
+          <div class="diagnostic-tools"><button class="secondary-button" id="copyDiagnostics" type="button">复制识别诊断</button><p class="field-hint">识别失败时用于排查播放器、正文和页面连接，不包含课程正文。</p><textarea class="diagnostic-output" id="diagnosticOutput" aria-label="识别诊断文本" readonly hidden></textarea></div>
+          <p class="form-error" id="settingsError" role="alert" hidden></p>
+        </div>
+        <div class="modal-actions"><button class="secondary-button" id="cancelSettings" type="button">取消</button><button class="primary-button" id="saveSettings" type="submit">保存设置<svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="m5 12 4 4L19 6"/></svg></button></div>
+      </form>
+    </section>
+  </div>
+  <div class="toast" id="toast" role="status" aria-live="polite"></div>
+  <script src="shared.js"></script>
+  <script src="popup.js"></script>
+</body>
+</html>

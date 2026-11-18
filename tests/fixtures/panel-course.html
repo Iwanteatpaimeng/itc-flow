@@ -1,0 +1,78 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>独立课程滚动面板验证</title>
+  <style>
+    * { box-sizing: border-box; }
+    html { overflow-y: scroll; }
+    body { margin: 0; min-height: 2000px; background: repeating-linear-gradient(#edf2f8 0 120px, #e1e9f4 120px 240px); color: #172033; font: 15px/1.6 "Segoe UI", "Microsoft YaHei", sans-serif; }
+    header { position: fixed; z-index: 30; inset: 0 0 auto; min-height: 205px; padding: 14px 24px; background: #fffffff5; border-bottom: 1px solid #9fb1ca; }
+    header strong { font-size: 18px; }
+    header p { margin: 5px 0; }
+    button { padding: 8px 14px; margin: 4px 8px 4px 0; font: inherit; border: 1px solid #9fb1ca; border-radius: 8px; background: #fff; color: #172033; cursor: pointer; }
+    button.primary { color: #fff; background: #245eea; border-color: #245eea; }
+    output { display: block; font-size: 13px; }
+    aside { position: fixed; z-index: 10; top: 230px; left: 20px; width: 226px; bottom: 24px; padding: 18px; background: white; border: 1px solid #b7c7dc; border-radius: 12px; overflow: auto; }
+    aside h2 { margin: 0 0 12px; font-size: 18px; }
+    .task-item { display: block; text-align: left; width: 100%; }
+    .task-item.active { background: #edf3ff; border-color: #245eea; }
+    main { position: fixed; z-index: 10; top: 230px; right: 24px; bottom: 24px; left: 268px; overflow-y: auto; overflow-x: hidden; padding: 24px 34px; background: white; border: 2px solid #6a8ddb; border-radius: 12px; scroll-behavior: auto; }
+    main h1 { font-size: 23px; margin: 0 0 12px; }
+    .reader-content { font-size: 17px; line-height: 1.9; }
+    .reader-content p { margin: 0 0 28px; }
+    video { display: block; width: min(780px, 100%); max-height: 78%; margin: 28px auto; background: #111827; border-radius: 10px; }
+    #panelTrace { position: fixed; z-index: 40; left: 28px; bottom: 32px; width: 204px; max-height: 270px; overflow: auto; background: #111827ee; color: #dbeafe; padding: 12px; border-radius: 8px; font: 11px/1.5 monospace; white-space: pre-wrap; pointer-events: none; }
+    .outer-marker { position: absolute; top: 1500px; width: 100%; text-align: center; color: #49627f; }
+    @media (max-width: 760px) { aside { display: none; } main { left: 12px; right: 12px; } #panelTrace { left: 18px; width: min(340px, 85vw); max-height: 130px; bottom: 28px; } header { font-size: 12px; padding: 10px 14px; } button { padding: 6px 9px; } }
+  </style>
+</head>
+<body>
+  <header>
+    <strong>独立课程面板：外页也能滚，但只能滚右侧课程</strong>
+    <p>前置文字 → 面板中间播放视频 → 尾部文字 → 等待平台确认。播放器以蓝框内可见区域为中心。</p>
+    <div><label>间隔（秒） <input id="panelInterval" type="number" min="1" max="30" value="1" style="width:52px"></label><button class="primary" id="panelStart">从课程顶部开始</button><button id="panelRestart">重新开始</button><button id="panelPause">暂停</button><button id="panelResume">继续</button><button id="panelStop">停止</button></div>
+    <label><input id="panelCompleteCheck" type="checkbox"> 模拟平台确认当前任务已完成</label>
+    <output id="panelPositions">等待布局</output>
+    <output id="panelGeometry">视频尚未播放</output>
+    <output id="panelState">本地视频生成中</output>
+    <output id="panelCount">已完成任务：0</output>
+  </header>
+  <aside aria-label="课程目录">
+    <h2>课程目录</h2>
+    <nav>
+      <button class="task-item active" data-task-id="panel-sequence-one" data-type="text" aria-current="true">1. 独立课程面板 · 文本与视频</button>
+      <button class="task-item" disabled>2. 后续课程（仅展示）</button>
+    </nav>
+    <p>蓝框内是独立滚动区域。左侧目录和顶部控制保持固定。</p>
+  </aside>
+  <main class="course-content" id="lessonPanel" aria-label="独立课程阅读面板">
+    <h1>当前任务：阅读、视频和尾部总结</h1>
+    <article class="reader-content" data-read-order="面板前置文字">
+      <h2>先逐步阅读这里的文字</h2>
+      <p>网络通信让不同设备能够交换数据。理解这个过程，需要先认识地址、链路、路由和传输协议各自承担的职责。课程正文放在独立的面板里，浏览器外层页面虽然也有可滚范围，却不应该参与正文阅读。</p>
+      <p>发送端把应用数据转换成协议所需的结构，并逐层添加控制信息。接收端根据这些信息恢复数据。阅读时可以记录每层输入和输出，再通过后面的演示把概念与实际现象联系起来。</p>
+      <p>在真实课程网站中，顶部导航、左侧课程目录和右侧阅读面板通常由不同的布局容器构成。滚动页面根节点不能替代移动真正的课程内容，也不能把播放器相对整个浏览器的位置当成它在阅读区域中的位置。</p>
+      <p>此验证页让外层页面故意具有滚动范围，并预先移动到一百八十像素的位置。开始学习应只把右侧课程面板归到顶部；外层页面的位置需要始终保持不变。顶部数值会持续显示这两个独立的位置。</p>
+      <p>每次等待指定间隔并做小幅随机浮动后，只向下移动右侧阅读区域。播放器前面的内容需要逐段经过可见区域，不能直接大幅跳到视频。进入播放状态后停止面板滚动。</p>
+      <p>当下方视频来到蓝框可见区域的中间时，才启动真实播放。顶部会记录播放事件发生时，播放器中心与面板可见中心的坐标，也会同时显示浏览器中心，方便确认采用了正确的参照区域。</p>
+    </article>
+    <div class="player-crop" style="overflow: hidden"><video id="panelVideo" controls playsinline data-course-video="true"></video></div>
+    <article class="reader-content" data-read-order="面板尾部文字">
+      <h2>视频结束后继续阅读这里的尾文</h2>
+      <p>视频播放结束仅表示当前媒体片段处理完成。面板中的尾部文字仍属于同一个课程任务，需要继续按相同的间隔向下阅读。它不能因为一个媒体结束事件就直接跳到下一项课程。</p>
+      <p>通过演示后，可以重新解释数据从发送端到接收端经过哪些层，以及每一层负责什么。把协议概念放回真实业务场景，有助于理解地址错误、链路中断和传输失败之间的区别。</p>
+      <p>在这里暂停时，右侧面板应保持当前位置。继续后保留已播放的视频记录并向下学习；重新开始则只让课程面板回到顶部，把视频进度和本项处理记录清零，外层页面不应移动。</p>
+      <p>当最后一段正文已经读到底，插件应进入等待平台确认状态。此时完成数量仍然是零。勾选上方的模拟平台完成信号后，才允许把当前任务计为完成；提前勾选也不能跳过视频和尾文。</p>
+      <p>外层页面的位置、右侧面板的位置以及媒体中心坐标都是真实 DOM 几何结果。这里没有伪造课程后台进度，也没有连接外部平台。验证用于检查浏览器中独立滚动容器的实际行为。</p>
+    </article>
+    <strong id="panelCompleteMarker" hidden>平台确认当前任务已完成</strong>
+  </main>
+  <div class="outer-marker">外层页面保留可滚动范围，用于检验是否误滚页面根节点。</div>
+  <output id="panelTrace">等视频生成后点击开始</output>
+  <script src="panel-course.js"></script>
+  <script src="/shared.js"></script>
+  <script src="/content.js"></script>
+</body>
+</html>

@@ -1,0 +1,83 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>数字教材折叠视频与正文容器验证</title>
+  <style>
+    * { box-sizing: border-box; }
+    html { overflow-y: scroll; }
+    body { margin: 0; min-height: 1900px; background: repeating-linear-gradient(#edf2f8 0 140px,#e1e9f4 140px 280px); color: #172033; font: 15px/1.6 "Segoe UI","Microsoft YaHei",sans-serif; }
+    header { position: fixed; z-index: 30; inset: 0 0 auto; padding: 12px 22px; background: #fffffff5; border-bottom: 1px solid #9fb1ca; }
+    header strong { font-size: 18px; }
+    header p { margin: 5px 0; }
+    button { padding: 7px 12px; margin: 4px 8px 4px 0; font: inherit; border: 1px solid #9fb1ca; border-radius: 8px; background: white; cursor: pointer; }
+    output { display: block; font-size: 12px; line-height: 1.6; }
+    aside { position: fixed; left: 18px; top: 250px; width: 215px; bottom: 20px; background: white; border: 1px solid #b7c7dc; border-radius: 12px; padding: 16px; }
+    .task-item { width: 100%; text-align: left; background: #edf3ff; border-color: #245eea; }
+    .information-cont { position: fixed; left: 252px; right: 22px; top: 250px; bottom: 20px; overflow: auto; background: white; border: 2px solid #bd8b47; padding: 12px; border-radius: 10px; }
+    .multi-content-box { height: 1400px; overflow: hidden; }
+    .reader-mobile-root { background: #fff; }
+    .reader-mobile__stage { padding: 0; }
+    main.reader-mobile__body { height: min(500px, calc(100vh - 300px)); min-height: 180px; overflow: hidden; border: 2px solid #8ca2c4; }
+    #reader-container { height: 100%; overflow-y: auto; overflow-x: hidden; border: 2px solid #3d72d7; padding: 18px 24px; }
+    .reader-chapter-content.w-e-text { overflow: hidden; font-size: 17px; line-height: 1.9; }
+    .reader-chapter-content p { margin: 0 0 26px; }
+    .reader-chapter-content--tiny { height: 82px; margin-bottom: 22px; padding: 0; }
+    .reader-chapter-content--tiny p { height: 105px; margin: 0; font-size: 14px; line-height: 21px; }
+    .reader-chapter-content h1 { font-size: 23px; margin: 0 0 12px; }
+    .reader-chapter-content h2 { font-size: 20px; margin: 20px 0 14px; }
+    span.td { display: block; margin: 20px 0 28px; border: 1px solid #a7bde1; border-radius: 8px; background: #f1f6ff; }
+    .insertVideoCheck { position: absolute; width: 1px; height: 1px; opacity: 0; }
+    .videoTitlepc-new { display: block; padding: 12px 16px; }
+    .videoTitlepc-new label { display: block; color: #1e52b5; cursor: pointer; font-weight: 600; }
+    .videoTitlepc-new label::before { content: "▶ "; }
+    .insertVideoCheck:checked ~ .videoTitlepc-new label::before { content: "▼ "; }
+    .element-new { display: block; height: 0; overflow: hidden; }
+    .insertVideoCheck:checked ~ .element-new { height: auto; }
+    video.insertVideo.cres { display: block; width: min(640px, 100%); height: 210px; object-fit: contain; margin: 0 auto 12px; background: #111827; }
+    .unused-layout-content { height: 850px; background: linear-gradient(#fff,#fff7e9); }
+    #digitalTrace { position: fixed; z-index: 40; left: 25px; bottom: 28px; width: 200px; max-height: 300px; overflow: auto; white-space: pre-wrap; background: #101827ee; color: #dbeafe; padding: 11px; border-radius: 8px; font: 11px/1.5 monospace; pointer-events: none; }
+    @media(max-width:800px) { aside { display:none; } .information-cont { left:12px; right:12px; } #digitalTrace { left:18px; width:300px; max-height:110px; } header { font-size:12px; padding:10px; } button { padding:5px 8px; } }
+  </style>
+</head>
+<body>
+  <header>
+    <strong>数字教材布局：正文容器与两段折叠视频</strong>
+    <p>虚构内容与本地视频；只复现布局层级、微小隐藏溢出和点击标题展开。蓝框是唯一正文滚动宿主。</p>
+    <div><label>间隔（秒） <input id="digitalInterval" type="number" min="1" max="30" value="1" style="width:52px"></label><button id="digitalStart">从教材顶部开始</button><button id="digitalPause">暂停</button><button id="digitalResume">继续</button><button id="digitalRestart">重新开始</button><button id="digitalStop">停止</button></div>
+    <label><input id="digitalComplete" type="checkbox"> 模拟平台确认当前任务完成</label>
+    <output id="digitalPositions">布局加载中</output><output id="digitalVideos">本地视频生成中</output><output id="digitalState">等待开始</output><output id="digitalCount">已完成任务：0</output>
+  </header>
+  <aside aria-label="课程目录"><h2>课程目录</h2><nav><button class="task-item active" data-task-id="digital-local-textbook" data-type="text" aria-current="true">数字教材本地章节</button></nav><p>正常顺序：前文 → 展开视频 1 → 播放 → 夹心正文 → 展开视频 2 → 播放 → 尾文 → 平台确认。</p></aside>
+  <div class="information-cont edmFull" id="informationPanel">
+    <div class="multi-content-box" id="multiContentShell">
+      <div class="reader-mobile-root"><div class="reader-mobile__stage">
+        <main class="reader-mobile__body" id="mobileBody">
+          <div id="reader-container" class="reader-container"><div id="reader-chapter-box">
+            <div class="reader-chapter-content w-e-text reader-chapter-content--tiny" id="tinyChapter"><p>本章节介绍虚构的学习场景。这个小提示块具有少量隐藏溢出，属于版式裁剪，并不承担正文滚动。它的高度为 82 像素，内部说明占 105 像素。</p></div>
+            <div class="reader-chapter-content w-e-text" id="longChapter">
+              <section data-read-order="教材前置正文"><h1>虚构数字教材：从概念到演示</h1><div id="digitalIntro"></div></section>
+              <span class="td" data-folded-order="1">
+                <input class="insertVideoCheck" id="check_fixture1" type="checkbox">
+                <span class="videoTitlepc-new" id="video_title_span_fixture1"><label for="check_fixture1">虚拟演示一：观察数据传输</label></span>
+                <span class="element-new"><video class="insertVideo cres" id="digitalVideo1" data-video-id="local-demo-one" controls playsinline></video></span>
+              </span>
+              <section data-read-order="教材夹心正文"><h2>演示之后继续理解正文</h2><div id="digitalMiddle"></div></section>
+              <span class="td" data-folded-order="2">
+                <input class="insertVideoCheck" id="check_fixture2" type="checkbox">
+                <span class="videoTitlepc-new" id="video_title_span_fixture2"><label for="check_fixture2">虚拟演示二：观察故障定位</label></span>
+                <span class="element-new"><video class="insertVideo cres" id="digitalVideo2" data-video-id="local-demo-two" controls playsinline></video></span>
+              </span>
+              <section data-read-order="教材尾部正文"><h2>本页最后的总结</h2><div id="digitalTail"></div></section>
+            </div>
+            <strong id="digitalCompleteMarker" hidden>平台确认当前任务完成</strong>
+          </div></div>
+        </main>
+      </div></div>
+      <div class="unused-layout-content" aria-hidden="true"></div>
+    </div>
+  </div>
+  <output id="digitalTrace">两段视频默认折叠，标题点击只展开，不会自动播放</output>
+  <script src="digital-textbook.js"></script><script src="/shared.js"></script><script src="/content.js"></script>
+</body>
+</html>

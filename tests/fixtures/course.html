@@ -1,0 +1,76 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>ICT 学习助手 · 本地课程验证</title>
+  <style>
+    * { box-sizing: border-box; }
+    body { margin: 0; color: #172033; background: #eef2f7; font: 16px/1.8 "Segoe UI", "Microsoft YaHei", sans-serif; }
+    header { background: white; padding: 22px 36px; border-bottom: 1px solid #d5deeb; }
+    header h1 { margin: 0; font-size: 23px; }
+    header p { margin: 4px 0 0; color: #52627a; font-size: 14px; }
+    .layout { display: grid; grid-template-columns: 260px minmax(0, 1fr); gap: 24px; max-width: 1250px; margin: 28px auto; padding: 0 24px; }
+    aside, main { border: 1px solid #d5deeb; border-radius: 16px; background: white; padding: 24px; }
+    aside { align-self: start; }
+    aside h2 { font-size: 17px; margin: 0 0 20px; }
+    .task-list { display: grid; gap: 12px; }
+    .task-item { width: 100%; padding: 14px 12px; border: 1px solid #d5deeb; border-radius: 10px; text-align: left; background: #f8fafc; color: inherit; font: inherit; cursor: pointer; }
+    .task-item.active { border-color: #2463eb; background: #edf3ff; color: #1748ad; }
+    .task-item.is-completed::after { content: " ✓"; }
+    .reader-content { height: 430px; overflow-y: auto; border: 1px solid #d5deeb; padding: 24px; border-radius: 10px; }
+    .reader-content p { margin: 0 0 28px; }
+    video { width: 100%; max-height: 420px; background: #111722; border-radius: 10px; }
+    .toolbar { display: flex; align-items: center; justify-content: space-between; margin-top: 24px; gap: 16px; }
+    .next-task { background: #2463eb; color: white; font: inherit; border: none; border-radius: 9px; padding: 10px 18px; cursor: pointer; }
+    .next-task:disabled { background: #a5b1c7; cursor: default; }
+    .type { display: inline-block; font-size: 13px; color: #52627a; }
+    #fixtureLog { background: #0f172a; color: #dbeafe; padding: 15px; border-radius: 10px; white-space: pre-wrap; font: 12px/1.7 monospace; max-height: 160px; overflow-y: auto; }
+    #fixtureNotice { color: #52627a; font-size: 13px; }
+    #readingOrderTrace { position: fixed; z-index: 20; right: 14px; bottom: 14px; width: min(380px, 90vw); max-height: 180px; overflow: auto; background: #101827ed; color: #dbeafe; border: 1px solid #93baff; border-radius: 10px; padding: 12px; white-space: pre-wrap; font: 12px/1.5 monospace; pointer-events: none; }
+    @media (max-width: 700px) { .layout { grid-template-columns: 1fr; } }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>ICT 学习助手 · 本地课程验证</h1>
+    <p>模拟课程目录、文本、HTML5 视频和文档阅读器。所有内容均在本地，不连接课程平台。</p>
+  </header>
+  <div class="layout">
+    <aside aria-label="课程目录">
+      <h2>课程目录</h2>
+      <nav class="task-list">
+        <button class="task-item active" data-task-id="read-1" data-type="text" aria-current="true">1. 认识计算机网络 · 文本</button>
+        <button class="task-item" data-task-id="video-2" data-type="video">2. 数据传输演示 · 视频</button>
+        <button class="task-item" data-task-id="document-3" data-type="document">3. 网络学习讲义 · 文档</button>
+        <button class="task-item" data-task-id="mixed-4" data-type="text">4. 图文课程：先读正文再看演示</button>
+        <button class="task-item" data-task-id="sequence-5" data-type="text">5. 顺序课程：两段视频与夹心、尾部文字</button>
+        <button class="task-item" data-task-id="quiz-6" data-type="quiz">6. 章节测验 · 需手动完成</button>
+      </nav>
+    </aside>
+    <main class="course-content" id="courseMain">
+      <h2 class="course-title" id="courseTitle">认识计算机网络</h2>
+      <span class="type" id="taskType">文本阅读</span>
+      <div id="courseBody"></div>
+      <div class="toolbar">
+        <small id="fixtureNotice">视频正在本地生成（约 3 秒），无需下载。</small>
+        <button class="next-task" rel="next" id="nextTask" type="button">下一项</button>
+      </div>
+      <div class="toolbar" aria-label="本地验证操作">
+        <button id="readerBottom" type="button">正文滚到底</button>
+        <button id="videoOffscreen" type="button">将视频移到屏幕下方</button>
+        <button id="videoCentered" type="button">将视频移回屏幕中间</button>
+        <button id="reuseReaderPage" type="button">复用正文手动换页</button>
+      </div>
+      <div class="toolbar" aria-label="平台完成信号模拟">
+        <label><input id="platformCompleteCheck" type="checkbox"> 模拟平台确认当前任务已完成</label>
+        <strong id="platformComplete" hidden>当前任务已完成</strong>
+      </div>
+      <h3>验证日志</h3>
+      <pre id="fixtureLog" aria-live="polite"></pre>
+    </main>
+  </div>
+  <output id="readingOrderTrace" aria-label="顺序学习实时记录">顺序学习记录会显示在这里</output>
+  <script src="course.js"></script>
+</body>
+</html>

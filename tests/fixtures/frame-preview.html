@@ -1,0 +1,52 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>跨框架整页顺序学习验证</title>
+  <style>
+    body { margin: 0; background: #eef2f7; color: #172033; font: 15px/1.6 "Segoe UI", sans-serif; }
+    header { position: fixed; z-index: 10; inset: 0 0 auto; padding: 12px 24px; background: #fffffff5; border-bottom: 1px solid #aaa; font-size: 13px; }
+    button { padding: 8px 14px; margin: 5px 8px 5px 0; }
+    output { display: block; }
+    main { width: min(900px, 94vw); margin: 220px auto 40px; padding: 24px; border: 1px solid #bac9de; border-radius: 12px; background: white; }
+    .reader-content { font-size: 17px; line-height: 1.9; }
+    .reader-content p { margin: 0 0 30px; }
+    iframe { display: block; width: 100%; height: 600px; margin: 28px auto; border: 1px solid #999; background: #111; }
+    #frameTrace { position: fixed; right: 14px; bottom: 14px; width: min(440px, 90vw); max-height: 170px; overflow: auto; white-space: pre-wrap; background: #101827ed; color: #dbeafe; border: 1px solid #93baff; border-radius: 10px; padding: 12px; pointer-events: none; font: 12px/1.5 monospace; }
+  </style>
+</head>
+<body>
+  <header>
+    <strong>真实跨框架顺序：</strong>父页面前文 → 内嵌视频 → 父页面尾文 → 平台完成信号。右下角记录实际处理顺序。
+    <div><label>间隔（秒）<input id="frameInterval" type="number" min="1" max="30" value="1" style="width:54px"></label><button id="frameStart">从顶部开始</button><button id="frameRestart">重新开始</button><button id="framePause">暂停</button><button id="frameResume">继续</button><button id="frameStop">停止</button></div>
+    <label><input id="frameCompleteCheck" type="checkbox"> 模拟平台确认当前任务已完成</label>
+    <output id="frameState">等待本地视频生成</output>
+    <output id="frameGeometry">尚未播放</output>
+    <output id="frameCount">已完成任务：0</output>
+  </header>
+  <main class="course-content">
+    <h1>同一任务中的父页面与内嵌视频</h1>
+    <article class="reader-content" data-read-order="父页面前文">
+      <h2>先阅读前文</h2>
+      <p>网络通信从理解设备之间的连接开始。数据经过不同设备时，需要根据地址、路由和链路状态找到下一步路径。先把这些概念与实际业务场景联系起来，再观察下方演示，才能理解视频中每个步骤的含义。</p>
+      <p>发送端把数据分成适合传输的单元，并为它们添加协议需要的信息。每一层负责不同工作：有的处理寻址，有的处理可靠性，有的处理具体的链路传输。阅读时可以记录每层输入和输出，形成可以验证的学习问题。</p>
+      <p>阅读前置正文时，插件应按照设定间隔逐步向下滚动。即使子框架里的视频已经完成加载，也不能立即把父页面大幅跳到播放器。只有播放器自然接近浏览器中间时，父页面才把当前片段交给内嵌内容引擎。</p>
+      <p>下方演示由本地浏览器生成，使用真实的视频播放和结束事件。它不会连接华为网站，也不会修改任何外部学习记录。观察右下角记录，可以确认前文先经过视口，再发生内嵌视频的真实播放事件。</p>
+    </article>
+    <iframe id="lessonFrame" title="内嵌课程视频" src="frame-player.html" allow="autoplay"></iframe>
+    <article class="reader-content" data-read-order="父页面尾文">
+      <h2>视频结束后继续阅读尾文</h2>
+      <p>内嵌视频结束并不表示整项课程已经完成。子框架需要向协调器归还控制权，父页面继续按原先的间隔阅读这里的尾部正文。已处理的内嵌片段不应再次播放，也不能直接触发下一项课程。</p>
+      <p>通过演示之后，可以对照前文重新解释数据封装、转发和接收过程。试着指出每一层协议负责什么，并说明遇到丢包或地址错误时应该从哪里开始排查。这些问题需要结合完整正文理解。</p>
+      <p>此处用于验证暂停与继续。暂停应同时停住父页面滚动和子框架媒体；继续应保留当前位置与已经播放的记录。重新开始则回到当前任务顶部，同时清除已处理片段并把视频进度归零。</p>
+      <p>只有本项所有文字与视频都处理到末尾，并且平台明确显示当前任务已完成，才允许把任务计入完成历史。请在上方切换平台确认复选框：提前确认也不能跳过本页剩余内容，到底后没有确认则继续等待。</p>
+    </article>
+    <strong id="frameCompleteMarker" hidden>当前任务已完成</strong>
+  </main>
+  <output id="frameTrace">等待从顶部开始</output>
+  <script src="frame-preview.js"></script>
+  <script src="/shared.js"></script>
+  <script src="/content.js"></script>
+</body>
+</html>

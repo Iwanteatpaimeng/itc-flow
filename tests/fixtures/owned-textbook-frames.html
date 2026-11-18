@@ -1,0 +1,14 @@
+<!doctype html>
+<html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>真实 owner 委托教材集成验证</title>
+<style>
+html{height:100%;overflow:visible}body{margin:0;min-height:1600px;overflow:visible;color:#172033;background:#edf2f8;font:14px/1.5 "Segoe UI",sans-serif}
+iframe{position:absolute;top:220px;left:14px;width:calc(100% - 28px);height:800px;border:1px solid #91a9d0;background:white}
+header{position:fixed;z-index:30;inset:0 0 auto;background:#eff5fff5;padding:10px 18px;border-bottom:1px solid #97b2df}button{font:inherit;margin:4px 6px 4px 0;padding:6px 10px}output{display:block;font-size:12px}#ownedTrace{position:fixed;z-index:30;bottom:12px;right:20px;max-width:520px;max-height:180px;overflow:auto;white-space:pre-wrap;background:#101827ee;color:#dbeafe;padding:10px;font:11px/1.4 monospace}
+.middle body{min-height:1050px}.middle iframe{top:120px;left:0;width:100%;height:720px;border:0}.middle header,.middle #ownedTrace{display:none}
+.tall-owner body{height:1739px;min-height:1739px}.tall-owner #ownedFrame{height:1104px;border-width:22px 0;border-style:solid;border-color:#dbe7fa}
+.tall-middle,.tall-middle body{height:100%;min-height:0;overflow:hidden}.tall-middle #ownedFrame{height:720px}
+.fit-reader:not(.middle) body>#ownedFrame{transform:scale(.5);transform-origin:top left;width:calc(200% - 28px)}
+</style></head><body>
+<header><strong>真实 owner → middle → reader 委托链</strong><div><button data-action="start">开始真实委托教材</button><button data-action="pause">暂停</button><button data-action="resume">继续</button><button data-action="restart">重新开始</button><button data-action="stop">停止</button><button id="ownedFitReader" type="button" aria-pressed="false">显示完整教材（测试）</button></div><output id="ownedState">等待开始</output><output id="ownedReader">等待读取器进度</output><output id="ownedTiming">等待读取器倒计时</output><output id="ownedGeometry">正在读取框架尺寸</output></header>
+<iframe id="ownedFrame" title="教材嵌套框架" allow="autoplay"></iframe><output id="ownedTrace">本页通过真实内容脚本模拟后台路由，所有教材与媒体均为本地虚构内容。</output>
+<script src="owned-textbook-frames.js"></script><script src="/shared.js"></script><script src="/content.js"></script></body></html>
