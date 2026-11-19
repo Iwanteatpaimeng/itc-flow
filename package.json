@@ -1,6 +1,6 @@
 {
   "name": "itc-study-companion",
-  "version": "1.2.15",
+  "version": "1.2.16",
   "private": true,
   "description": "Edge 课程学习辅助扩展的本地验证工具",
   "scripts": {

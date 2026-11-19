@@ -57,6 +57,7 @@
   // position, so the final screen needs a moment to be reported before the
   // chapter is declared finished.
   const SETTLE_TAIL_MS = 1200;
+  const SETTLE_MAX_ROUNDS = 3;
   let settings = { ...DEFAULTS, selectors: { ...DEFAULTS.selectors } };
   let current = null;
   let running = false;
@@ -865,11 +866,20 @@
     if (!flow) return;
     if (!Array.isArray(flow.trace)) flow.trace = [];
     const media = nextFlowMedia();
-    let position = null;
-    try { position = Math.round(Number(readingScrollTarget()?.scrollTop) || 0); } catch { position = null; }
+    let position = null, target = null;
+    try { target = readingScrollTarget(); position = Math.round(Number(target?.scrollTop) || 0); } catch { position = null; }
     flow.trace.push({ at: Math.round(performance.now() / 1000), phase, scroll: scrollState, action, position,
+      target: target ? { tag: String(target.tagName || "").toLowerCase(), id: String(target.id || "").slice(0, 32),
+        max: Math.max(0, Math.round(Number(target.scrollHeight) - Number(target.clientHeight))) } : null,
       media: media ? { tag: media.tagName, id: String(media.getAttribute?.("id") || "").slice(0, 40), passed: mediaPassed(media) } : null });
     if (flow.trace.length > 40) flow.trace.splice(0, flow.trace.length - 40);
+  }
+
+  function chapterKey() {
+    // A digital textbook re-mounts its reader when the learner switches chapters,
+    // so element identity is the only stable chapter marker across mounts.
+    if (!flow) return "";
+    return flowReaders().slice(0, 4).map(reader => String(reader.id || reader.className || "").slice(0, 32)).join("|");
   }
 
   function readingCoverage() {
@@ -879,23 +889,27 @@
     const max = Math.max(0, Math.round(Number(target.scrollHeight) - Number(target.clientHeight)));
     const position = Math.round(Number(target.scrollTop) || 0);
     return { tag: String(target.tagName || "").toLowerCase(), id: String(target.id || "").slice(0, 40),
-      position, max, percent: max > 0 ? Math.min(100, Math.round(position / max * 100)) : 100 };
+      chapter: chapterKey(), position, max, contentHeight: Math.round(Number(target.scrollHeight) || 0),
+      percent: max > 0 ? Math.min(100, Math.round(position / max * 100)) : 100 };
+  }
+
+  function settleExtent() {
+    return flowTargets().map(target => Math.max(0, Number(target.scrollHeight) - Number(target.clientHeight))).join(",");
   }
 
   function settleFlowTail() {
-    // Chapter completion is reported from the reader's own scroll position.
-    // Before finishing, walk every reading target to its end once and give the
-    // page a moment to post that last location, otherwise the chapter can stay
-    // one screen short even though the text looks finished.
+    // Completion is reported from the reader's last scroll position, so the end
+    // of the chapter has to be reached and stay stable while the page posts it.
     if (!flow) return;
     flow.settleDone = true;
     flow.settleAt = performance.now();
+    flow.settleRounds = Math.max(0, Number(flow.settleRounds) || 0) + 1;
     for (const target of flowTargets()) {
       const max = Math.max(0, Number(target.scrollHeight) - Number(target.clientHeight));
-      if (!(Number(target.scrollTop) < max)) continue;
       try { target.scrollTo({ top: max, behavior: "instant" }); } catch { target.scrollTop = max; }
       activeScrollTargets.add(target);
     }
+    flow.settleExtent = settleExtent();
     clearTimeout(scrollTimer); scrollTimer = null; nextScrollAt = 0;
     clearTimeout(settleTimer);
     phase = "reading";
@@ -904,6 +918,14 @@
     settleTimer = setTimeout(() => {
       settleTimer = null;
       if (!running || paused || completed || !flow) return;
+      if (settleExtent() !== flow.settleExtent && flow.settleRounds < SETTLE_MAX_ROUNDS) {
+        // The chapter grew while its end was being confirmed (lazy Word frame,
+        // images, collapsed player): read the new tail and confirm again.
+        traceFlow("settle-grew");
+        flow.settleDone = false;
+        settleFlowTail();
+        return;
+      }
       evaluateFlow();
       report(true);
     }, SETTLE_TAIL_MS);
@@ -1027,6 +1049,15 @@
       return;
     }
     guardFlowMedia();
+    const chapter = chapterKey();
+    if (flow.chapter !== chapter) {
+      // Switching chapters replaces the reader node: offsets, pending settle and
+      // coverage from the previous mount do not describe the new chapter.
+      if (flow.chapter !== undefined) traceFlow("chapter");
+      flow.chapter = chapter;
+      flow.settleDone = false; flow.settleRounds = 0; flow.settleAt = 0; flow.settleExtent = "";
+      if (settings.scrollEnabled) scrollState = "scheduled";
+    }
     if (digitalTextbookHost(flow.root) === flow.root) {
       // Recheck synchronously at a reading step: a retained chapter node can be
       // emptied before the debounced identity observer has seen its mutation.
@@ -1167,7 +1198,7 @@
       phase = "waiting_completion"; detail = flowDetail(); report(true); return;
     }
     phase = "reading"; detail = flowDetail();
-    flow.settleDone = false;
+    flow.settleDone = false; flow.settleRounds = 0; flow.settleExtent = "";
     // Content can grow after the chapter looked finished (late-loading last
     // screen); keep the reading step armed so the new tail is still reached.
     if (!scrollTimer) scheduleScroll();

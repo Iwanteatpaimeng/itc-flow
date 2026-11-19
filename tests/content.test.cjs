@@ -801,6 +801,27 @@ test("the last screen of a chapter is settled and re-reported before the task co
   assert.equal(doneCount(engine), 0);
 });
 
+test("a chapter that grows while its end is confirmed is read to the new end", async () => {
+  const engine = createContent({ textLength: 600 });
+  await engine.ask("ENGINE_RUN", { settings: { scrollIntervalSeconds: 1, scrollEnabled: true } });
+  const bottom = () => engine.reader.scrollHeight - engine.reader.clientHeight;
+  let confirming = false;
+  for (let guard = 0; guard < 400 && !confirming; guard += 1) {
+    await engine.clock.advance(200);
+    confirming = String(engine.snapshot().detail || "").includes("正在确认末尾位置");
+  }
+  assert.ok(confirming, "the tail confirmation window must be observable");
+  assert.equal(engine.reader.scrollTop, bottom(), "the first tail must be reached before it grows");
+  // The Word frame or images at the end mount while the tail is being confirmed.
+  engine.reader.scrollHeight = bottom() + engine.reader.clientHeight + 500;
+  await engine.clock.advance(3_000);
+  const grown = engine.reader.scrollHeight - engine.reader.clientHeight;
+  assert.equal(engine.reader.scrollTop, grown, "the confirmed tail must include the grown part");
+  const trace = (await engine.ask("ENGINE_PROBE")).diagnostics.runtime.trace;
+  assert.ok(trace.some(entry => entry.action === "settle-grew"), "growth during confirmation should be traced");
+  assert.equal(doneCount(engine), 0);
+});
+
 test("probe diagnostics describe visible media and iframe origins without exporting body text or URL tokens", async () => {
   const engine = createContent();
   engine.context.location = new URL("https://e.huawei.com/course/test?auth=fixture-query-token#fixture-route-token");
