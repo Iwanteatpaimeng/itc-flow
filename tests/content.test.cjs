@@ -51,7 +51,7 @@ test("each scroll waits within the configured interval and its small random vari
   for (const random of [0, 1]) {
     const engine = createContent();
     engine.context.Math.random = () => random;
-    const started = await engine.ask("ENGINE_RUN", { settings: { scrollIntervalSeconds: 10, scrollEnabled: true } });
+    const started = await engine.ask("ENGINE_RUN", { settings: { scrollIntervalSeconds: 10, scrollEnabled: true, readingSpeed: "standard" } });
     assert.equal(started.ok, true);
     await engine.clock.advance(8999);
     assert.equal(engine.reader.scrolls.length, 0, "first movement must also honor the interval");
@@ -63,6 +63,19 @@ test("each scroll waits within the configured interval and its small random vari
     assert.ok(engine.reader.scrollTop > first, "the next interval must move downward again");
     assert.equal(doneCount(engine), 0);
   }
+});
+
+test("fast reading halves the wait and widens each step", async () => {
+  const engine = createContent();
+  const started = await engine.ask("ENGINE_RUN", { settings: { scrollIntervalSeconds: 10, scrollEnabled: true, readingSpeed: "fast" } });
+  assert.equal(started.ok, true);
+  await engine.clock.advance(4400);
+  assert.equal(engine.reader.scrolls.length, 0, "fast mode still waits for the halved interval");
+  await engine.clock.advance(1200);
+  assert.equal(engine.reader.scrolls.length, 1);
+  assert.ok(engine.reader.scrollTop >= 96, "fast mode covers at least half a short viewport");
+  await engine.clock.advance(4000);
+  assert.equal(engine.reader.scrolls.length, 2, "the next fast interval is about half the configured wait");
 });
 
 test("random reading scroll targets the actual nested reader and stops immediately on pause", async () => {
@@ -159,7 +172,7 @@ test("mixed text and video content is read in small steps before the naturally c
   engine.mappings.set("video", [engine.media]);
   const root = engine.context.document.scrollingElement;
   root.scrollHeight = 5000;
-  const settings = { scrollIntervalSeconds: 1, scrollEnabled: true };
+  const settings = { scrollIntervalSeconds: 1, scrollEnabled: true, readingSpeed: "standard" };
   const detected = await engine.ask("ENGINE_PROBE", { settings });
   assert.equal(detected.candidate.type, "text", "a lower video must not bypass the preceding lesson text");
   assert.equal(detected.candidate.readingBeforeVideo, true);
@@ -311,7 +324,7 @@ test("a separate inner text reader is read to its bottom before the outer page a
   engine.mappings.set("video", [engine.media]);
   const root = engine.context.document.scrollingElement;
   root.scrollHeight = 5000;
-  const settings = { scrollIntervalSeconds: 1, scrollEnabled: true };
+  const settings = { scrollIntervalSeconds: 1, scrollEnabled: true, readingSpeed: "standard" };
   await engine.ask("ENGINE_RUN", { settings });
   await engine.clock.advance(1250);
   assert.ok(engine.reader.scrollTop > 0);
@@ -333,7 +346,7 @@ test("a naturally centered video still waits until its preceding independent rea
   engine.main.children = [engine.heading, engine.reader, engine.media];
   engine.media.parentElement = engine.main;
   engine.mappings.set("video", [engine.media]);
-  const settings = { scrollIntervalSeconds: 1, scrollEnabled: true };
+  const settings = { scrollIntervalSeconds: 1, scrollEnabled: true, readingSpeed: "standard" };
   const detected = await engine.ask("ENGINE_PROBE", { settings });
   assert.equal(detected.candidate.type, "text", "player alignment does not mean that an independent text reader has been read");
   assert.equal(detected.candidate.readingBeforeVideo, true);
@@ -497,7 +510,7 @@ test("embedded video completion returns to its owner to read trailing text befor
   child.context.postMessage = message => child.emitWindow("message", { data: message, source: owner.context });
   child.context.parent = owner.context;
   child.context.top = owner.context;
-  const settings = { scrollIntervalSeconds: 1, scrollEnabled: true };
+  const settings = { scrollIntervalSeconds: 1, scrollEnabled: true, readingSpeed: "standard" };
   await owner.ask("ENGINE_RUN", { settings, resetPosition: true, runId: "owner-page" });
   const request = owner.outbound.find(message => message.type === "ENGINE_EMBEDDED_REQUEST");
   assert.ok(request, "the owner delegates only its next iframe in page order");
@@ -723,7 +736,7 @@ test("replacing a reader DOM element stops its old timer and reports a same-key 
 
 test("manual route changes reuse the reader node while retiring the previous task's scroll timer", async () => {
   const engine = createContent();
-  const settings = { scrollIntervalSeconds: 1, scrollEnabled: true };
+  const settings = { scrollIntervalSeconds: 1, scrollEnabled: true, readingSpeed: "standard" };
   const started = await engine.ask("ENGINE_RUN", { settings });
   await engine.clock.advance(1500);
   const originalReader = engine.reader;

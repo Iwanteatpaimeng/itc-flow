@@ -3,7 +3,7 @@
   "use strict";
   if (globalThis.StudyShared) return;
   const DEFAULTS = Object.freeze({
-    theme: "system", scrollIntervalSeconds: 10, scrollEnabled: true, autoNext: true, muteVideo: true, nextDelaySeconds: 3,
+    theme: "system", scrollIntervalSeconds: 10, scrollEnabled: true, autoNext: true, muteVideo: true, nextDelaySeconds: 3, readingSpeed: "fast",
     selectors: Object.freeze({ video: "", document: "", scroll: "", next: "", task: "", activeTask: "", completed: "" })
   });
   function numberInRange(value, fallback, min, max) {
@@ -20,6 +20,7 @@
       autoNext: typeof source.autoNext === "boolean" ? source.autoNext : DEFAULTS.autoNext,
       muteVideo: typeof source.muteVideo === "boolean" ? source.muteVideo : DEFAULTS.muteVideo,
       nextDelaySeconds: numberInRange(source.nextDelaySeconds, DEFAULTS.nextDelaySeconds, 0, 30),
+      readingSpeed: ["standard", "fast"].includes(source.readingSpeed) ? source.readingSpeed : DEFAULTS.readingSpeed,
       selectors: Object.fromEntries(Object.keys(DEFAULTS.selectors).map(key => [key,
         typeof source.selectors?.[key] === "string" ? source.selectors[key].trim().slice(0, 1000) : ""
       ]))

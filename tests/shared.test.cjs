@@ -26,7 +26,7 @@ test("untrusted persisted settings cannot disable defaults or create an unbounde
 test("valid settings round-trip without losing explicit false controls or selector overrides", () => {
   const expected = {
     theme: "dark", scrollIntervalSeconds: 20, scrollEnabled: false, autoNext: false, muteVideo: false,
-    nextDelaySeconds: 0,
+    nextDelaySeconds: 0, readingSpeed: "standard",
     selectors: { video: "#course-video", document: ".reader", scroll: ".actual-scroll-wrap", next: "button.next", task: "[data-task-id]", activeTask: "[aria-current=true]", completed: "[data-completed=true]" }
   };
   const saved = shared.normalizeSettings(expected);

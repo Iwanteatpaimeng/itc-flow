@@ -266,7 +266,9 @@
     $("#stopButton").disabled = state.pending || !status || ["idle", "completed"].includes(phase);
     $("#restartButton").disabled = !state.ready || !validTab() || state.pending;
     $("#rescanButton").disabled = state.pending || !state.ready || !validTab();
-    $("#scrollSummary").textContent = state.settings.scrollEnabled ? `${state.settings.scrollIntervalSeconds} 秒 ±10%` : "已关闭";
+    $("#scrollSummary").textContent = state.settings.scrollEnabled
+      ? `${state.settings.readingSpeed === "fast" ? "快速 · " : ""}${state.settings.scrollIntervalSeconds} 秒 ±10%`
+      : "已关闭";
     $("#nextSummary").textContent = state.settings.autoNext ? "已开启" : "已关闭";
     let domain = "请打开课程页面";
     try { domain = new URL(state.tab.url).hostname; } catch { /* Current page may not expose a URL. */ }
@@ -328,6 +330,7 @@
     themeInput.checked = true;
     $("#scrollIntervalSeconds").value = settings.scrollIntervalSeconds;
     ["scrollEnabled", "autoNext", "muteVideo"].forEach((key) => { $(`#${key}`).checked = settings[key]; });
+    $("#readingSpeed").checked = settings.readingSpeed === "fast";
     $("#nextDelaySeconds").value = settings.nextDelaySeconds;
     Object.entries(selectorIds).forEach(([key, id]) => { $(`#${id}`).value = settings.selectors[key] || ""; $(`#${id}`).setCustomValidity(""); });
     $("#settingsError").hidden = true;
@@ -420,6 +423,7 @@
       autoNext: $("#autoNext").checked,
       muteVideo: $("#muteVideo").checked,
       nextDelaySeconds: Number($("#nextDelaySeconds").value),
+      readingSpeed: $("#readingSpeed").checked ? "fast" : "standard",
       selectors
     });
     $("#saveSettings").disabled = true;

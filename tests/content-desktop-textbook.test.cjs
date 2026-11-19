@@ -6,7 +6,7 @@ const { createContent, element, mediaElement } = require("./helpers/content-harn
 
 const descendants = node => node.children.flatMap(child => [child, ...descendants(child)]);
 const append = (parent, children) => { parent.children = children; children.forEach(child => { child.parentElement = parent; }); };
-const settings = { scrollIntervalSeconds: 1, scrollEnabled: true };
+const settings = { scrollIntervalSeconds: 1, scrollEnabled: true, readingSpeed: "standard" };
 
 // The page shell shared by the desktop textbook fixtures: no main/mobile reader,
 // two nested application wrappers and a native reader-container.
@@ -279,4 +279,44 @@ test("a desktop disclosure that finishes after the scheduled tick rearms scrolli
   const countdowns = engine.outbound.filter(message => message.type === "ENGINE_PROGRESS").map(message => message.snapshot)
     .filter(snapshot => snapshot.elapsedSeconds >= 1 && snapshot.phase === "reading").map(snapshot => snapshot.scroll.nextInSeconds);
   assert.ok(countdowns.some(value => value > 0), "a subsequent reading wait must report its positive countdown");
+});
+
+test("the last screen of a textbook chapter waits for the reader to post its position", async () => {
+  const { engine, host } = sessionReader({ withVideo: false });
+  const trace = async () => (await engine.ask("ENGINE_PROBE")).diagnostics.runtime.trace || [];
+  const run = await engine.ask("ENGINE_RUN", { settings, resetPosition: true });
+  assert.equal(run.ok, true);
+  let dwelled = false;
+  for (let step = 0; step < 90 && !dwelled; step += 1) {
+    await engine.clock.advance(1000);
+    dwelled = (await trace()).some(entry => entry.action === "chapter-dwell");
+  }
+  assert.ok(dwelled, "reaching a chapter end must dwell so the heartbeat can post it");
+  const atDwell = host.scrollTop;
+  await engine.clock.advance(6000);
+  assert.equal(host.scrollTop, atDwell, "the chapter's last screen must stay visible during the dwell");
+  await engine.clock.advance(6000);
+  assert.ok(host.scrollTop > atDwell, "reading resumes after the dwell");
+  const coverage = engine.snapshot()?.flow?.coverage;
+  assert.ok(coverage?.chapters?.length >= 1, "diagnostics must list the mounted chapters");
+  assert.ok(coverage.chapters.some(chapter => chapter.dwelled), "the settled chapter must be marked as dwelled");
+});
+
+test("fast reading jumps to a chapter's last screen instead of crawling every screen", async () => {
+  // The platform credits the farthest reported span, so a 5707px chapter with
+  // 3959 spans does not need every screen: jump to its last screen, dwell there
+  // for the heartbeat, and move on to the next chapter.
+  const { engine, host } = sessionReader({ withVideo: false });
+  const trace = async () => (await engine.ask("ENGINE_PROBE")).diagnostics.runtime.trace || [];
+  const run = await engine.ask("ENGINE_RUN", { settings: { ...settings, readingSpeed: "fast" }, resetPosition: true });
+  assert.equal(run.ok, true);
+  await engine.clock.advance(1200);
+  assert.ok(host.scrollTop > 700, `the first fast step must jump near the chapter end (${host.scrollTop})`);
+  assert.ok(host.scrollTop < host.scrollHeight - host.clientHeight, "it must stop at the chapter end, not the book end");
+  let dwelled = false;
+  for (let step = 0; step < 30 && !dwelled; step += 1) {
+    await engine.clock.advance(1000);
+    dwelled = (await trace()).some(entry => entry.action === "chapter-dwell");
+  }
+  assert.ok(dwelled, "the chapter end still waits for the heartbeat after a jump");
 });

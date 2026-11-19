@@ -5,7 +5,7 @@
   globalThis.__ITC_ENGINE__ = true;
 
   const DEFAULTS = {
-    scrollIntervalSeconds: 10, scrollEnabled: true, autoNext: true, muteVideo: true,
+    scrollIntervalSeconds: 10, scrollEnabled: true, autoNext: true, muteVideo: true, readingSpeed: "fast",
     nextDelaySeconds: 3, selectors: { video: "", document: "", scroll: "", next: "", task: "", activeTask: "", completed: "" }
   };
   const ACTIVE_SELECTORS = [
@@ -58,6 +58,9 @@
   // chapter is declared finished.
   const SETTLE_TAIL_MS = 1200;
   const SETTLE_MAX_ROUNDS = 3;
+  // The reader posts its position in heartbeats of roughly five seconds, so a
+  // chapter's last screen has to stay on screen longer than one heartbeat.
+  const CHAPTER_DWELL_MS = 10000;
   let settings = { ...DEFAULTS, selectors: { ...DEFAULTS.selectors } };
   let current = null;
   let running = false;
@@ -121,6 +124,7 @@
     const merged = { ...settings, ...(value || {}) };
     merged.selectors = { ...DEFAULTS.selectors, ...settings.selectors, ...(value?.selectors || {}) };
     merged.scrollIntervalSeconds = Math.max(1, Math.min(3600, Number(merged.scrollIntervalSeconds) || DEFAULTS.scrollIntervalSeconds));
+    merged.readingSpeed = ["standard", "fast"].includes(merged.readingSpeed) ? merged.readingSpeed : DEFAULTS.readingSpeed;
     delete merged.readSeconds;
     settings = merged;
     if (previousMuteSetting !== merged.muteVideo && activeMedia && mediaOriginalMuted !== null) {
@@ -251,7 +255,7 @@
         nextInSeconds: nextScrollAt ? Math.max(0, (nextScrollAt - performance.now()) / 1000) : null,
         expandingVideo: Boolean(flow?.expandingMedia), needsReadingStep: Boolean(flow?.expansionNeedsStep),
         activeVideo: Boolean(activeMedia), delegated: Boolean(flow?.embedded),
-        trace: Array.isArray(flow?.trace) ? flow.trace.slice(-16) : [] },
+        trace: Array.isArray(flow?.trace) ? flow.trace.slice(-40) : [] },
       media: videos.slice(0, 8).map((media, index) => {
         const rect = plainRect(media.getBoundingClientRect());
         const disclosure = textbookDisclosure(media);
@@ -890,11 +894,103 @@
     const position = Math.round(Number(target.scrollTop) || 0);
     return { tag: String(target.tagName || "").toLowerCase(), id: String(target.id || "").slice(0, 40),
       chapter: chapterKey(), position, max, contentHeight: Math.round(Number(target.scrollHeight) || 0),
+      chapters: flow ? textbookChapters().map((node, index) => ({
+        id: chapterIdentifier(node, index),
+        spans: queryAll("span", node).length,
+        dwelled: flow.dwelled.has(chapterIdentifier(node, index))
+      })) : [],
       percent: max > 0 ? Math.min(100, Math.round(position / max * 100)) : 100 };
   }
 
   function settleExtent() {
     return flowTargets().map(target => Math.max(0, Number(target.scrollHeight) - Number(target.clientHeight))).join(",");
+  }
+
+  function textbookChapters() {
+    // Real textbook pages keep every mounted chapter inside one scrolling host
+    // as `.reader-chapter-content`; each of them is scored separately. The
+    // mounted chapters must come from the document, not from the detected
+    // reader, because only the reader around the viewport is detected.
+    const host = flowTargets()[flowTargets().length - 1] || flow?.root;
+    if (host) {
+      const mounted = queryAll(".reader-chapter-content").filter(node => node !== host && host.contains(node));
+      if (mounted.length) return mounted;
+    }
+    return flowReaders().filter(reader => /reader-chapter-content/.test(String(reader.className || "")));
+  }
+
+  function chapterIdentifier(chapter, index) {
+    return String(chapter.id || "").slice(0, 40) || `chapter-${index}`;
+  }
+
+  function chapterEndOnScreen() {
+    const chapters = textbookChapters();
+    if (!chapters.length) return null;
+    const host = flowTargets()[flowTargets().length - 1];
+    if (!host || host.scrollHeight - host.clientHeight < 4) return null;
+    const port = viewportBounds(host);
+    if (!(port.height > 0)) return null;
+    for (let index = chapters.length - 1; index >= 0; index -= 1) {
+      const chapter = chapters[index];
+      const rect = chapter.getBoundingClientRect();
+      if (!(rect.height > 0)) continue;
+      // A chapter that fits the viewport was on screen for its whole read, so the
+      // heartbeat already saw its last span; only tall chapters need a dwell.
+      if (!(rect.height > port.height)) continue;
+      const visibleBottom = rect.bottom > port.top && rect.bottom <= port.top + port.height - 4;
+      if (!visibleBottom) continue;
+      const id = chapterIdentifier(chapter, index);
+      if (flow.dwelled.has(id)) continue;
+      return { element: chapter, id };
+    }
+    return null;
+  }
+
+  function chapterJumpTarget(target) {
+    // The platform only keeps the farthest reported location, so a chapter can be
+    // completed by showing its last screen for one heartbeat instead of crawling
+    // every screen. Short chapters never dwell, so they are left to normal steps.
+    const chapters = textbookChapters();
+    if (!chapters.length || !target) return null;
+    const port = viewportBounds(target);
+    if (!(port.height > 0)) return null;
+    const targetRect = target.getBoundingClientRect();
+    const scaleY = targetRect.height / (Number(target.offsetHeight) || targetRect.height || 1);
+    const max = Math.max(0, target.scrollHeight - target.clientHeight);
+    for (let index = 0; index < chapters.length; index += 1) {
+      const chapter = chapters[index];
+      if (flow.dwelled.has(chapterIdentifier(chapter, index))) continue;
+      const rect = chapter.getBoundingClientRect();
+      if (!(rect.height > 0)) continue;
+      if (rect.bottom <= port.top + 4) continue;
+      if (!(rect.height > port.height)) continue;
+      const bottomInHost = rect.bottom - targetRect.top;
+      const goal = target.scrollTop + bottomInHost / scaleY - port.height * 0.62;
+      return Math.max(0, Math.min(max, goal));
+    }
+    return null;
+  }
+
+  function settleChapter(found) {
+    // The platform stamps the span that is on screen when its heartbeat posts
+    // progress, so a chapter's last screen has to stay visible for a beat before
+    // the next chapter scrolls into view.
+    if (!flow || !found) return;
+    flow.dwelled.add(found.id);
+    flow.dwellElement = found.element;
+    clearTimeout(scrollTimer); scrollTimer = null; nextScrollAt = 0;
+    clearTimeout(settleTimer);
+    phase = "reading"; scrollState = "bottom";
+    detail = "本章末尾已显示，等待平台补报阅读位置后继续下一章";
+    traceFlow("chapter-dwell");
+    settleTimer = setTimeout(() => {
+      settleTimer = null;
+      if (flow) flow.dwellElement = null;
+      if (!running || paused || completed || !flow) return;
+      evaluateFlow();
+      report(true);
+    }, CHAPTER_DWELL_MS);
+    report(true);
   }
 
   function settleFlowTail() {
@@ -910,6 +1006,9 @@
       activeScrollTargets.add(target);
     }
     flow.settleExtent = settleExtent();
+    // A textbook's last chapter is often shorter than a screen; the end of the
+    // whole text still needs one heartbeat before it is reported.
+    flow.settleWait = textbookChapters().length ? CHAPTER_DWELL_MS : SETTLE_TAIL_MS;
     clearTimeout(scrollTimer); scrollTimer = null; nextScrollAt = 0;
     clearTimeout(settleTimer);
     phase = "reading";
@@ -928,7 +1027,7 @@
       }
       evaluateFlow();
       report(true);
-    }, SETTLE_TAIL_MS);
+    }, flow.settleWait);
     report(true);
   }
 
@@ -1037,6 +1136,14 @@
 
   function evaluateFlow() {
     if (!running || paused || completed || !flow || activeMedia || flow.embedded) return;
+    // A settle or chapter dwell owns the next step: let the reader post its
+    // position before the next scroll moves the screen away. The page may swap
+    // the chapter mid-dwell though, and that new state has to be handled now.
+    if (settleTimer) {
+      if (!flow.dwellElement) return;
+      if (textbookChapters().includes(flow.dwellElement)) return;
+      clearTimeout(settleTimer); settleTimer = null; flow.dwellElement = null;
+    }
     if (embeddedBinding && current.type === "document" && (!current.element.isConnected || !flow.root.isConnected)) {
       // Rendering can replace the viewer before the mutation debounce runs.
       // Rebind now so the missing old surface cannot look like end-of-document.
@@ -1089,6 +1196,11 @@
       report(); return;
     }
     const media = nextFlowMedia();
+    const chapterEnd = media ? null : chapterEndOnScreen();
+    if (chapterEnd) {
+      settleChapter(chapterEnd);
+      return;
+    }
     if (flow.frameTransport && media?.tagName === "IFRAME") {
       const rect = plainRect(media.getBoundingClientRect());
       const port = viewportBounds(media);
@@ -1191,7 +1303,7 @@
       }
       if (!flow.settleDone) { settleFlowTail(); return; }
       // Give the page its full settle window even when a tick lands earlier.
-      if (flow.settleAt && performance.now() - flow.settleAt < SETTLE_TAIL_MS) { report(true); return; }
+      if (flow.settleAt && performance.now() - flow.settleAt < (flow.settleWait || SETTLE_TAIL_MS)) { report(true); return; }
       scrollState = "bottom";
       if (embeddedBinding) { finishEmbedded(); return; }
       if (platformComplete()) { finish(); return; }
@@ -1477,7 +1589,10 @@
     scrollTimer = null;
     nextScrollAt = 0;
     if (!running || paused || activeMedia || flow?.embedded || flow?.expandingMedia || flow?.documentLoading || current?.chapterLoading || flow?.readingPortReady === false || !settings.scrollEnabled) return;
-    const delay = settings.scrollIntervalSeconds * 1000 * (0.9 + Math.random() * 0.2);
+    // Fast mode halves the wait: the platform scores the farthest position it is
+    // told about, so time spent per screen does not change completion.
+    const intervalSeconds = settings.readingSpeed === "fast" ? Math.max(1, settings.scrollIntervalSeconds / 2) : settings.scrollIntervalSeconds;
+    const delay = intervalSeconds * 1000 * (0.9 + Math.random() * 0.2);
     currentScrollInterval = delay / 1000;
     nextScrollAt = performance.now() + delay;
     if (!["bottom", "no_target", "unresponsive"].includes(scrollState)) scrollState = "scheduled";
@@ -1492,6 +1607,9 @@
   function performReadingStep() {
     if (!running || paused || activeMedia || flow?.embedded || !settings.scrollEnabled) return;
     evaluateFlow();
+    // A chapter dwell or a tail settle owns this tick: scrolling now would move
+    // the last screen away before the reader posts its position.
+    if (settleTimer) return;
     if (!running || activeMedia || flow?.embedded || flow?.expandingMedia || flow?.documentLoading || current?.chapterLoading ||
         !current?.element.isConnected || flow?.readingPortReady === false) return;
     const target = readingScrollTarget();
@@ -1506,9 +1624,19 @@
         report(true);
         return;
       }
-      const distance = Math.max(48, Math.min(240, target.clientHeight * (0.16 + Math.random() * 0.12)));
+      // Reading speed only changes how wide each step is; the chapter dwell and
+      // the tail settle still guarantee the last screen is reported.
+      const distance = settings.readingSpeed === "fast"
+        ? Math.max(96, target.clientHeight * 0.5)
+        : Math.max(48, Math.min(240, target.clientHeight * (0.16 + Math.random() * 0.12)));
       let next = Math.min(max, before + distance);
       const nextMedia = flow ? nextFlowMedia() : current.nextMedia;
+      if (settings.readingSpeed === "fast" && !nextMedia) {
+        // Skim mode jumps straight to the next chapter's last screen; the dwell
+        // then keeps it there long enough for the platform heartbeat to post it.
+        const jump = chapterJumpTarget(target);
+        if (jump !== null && jump > next) next = Math.min(max, jump);
+      }
       if (nextMedia && target.contains?.(nextMedia)) {
         const anchor = flowMediaAnchor(nextMedia);
         const mediaRect = anchor.getBoundingClientRect();
@@ -1987,6 +2115,7 @@
       played: new Set(matchingCheckpoint && Array.isArray(checkpoint.flow?.playedMediaIds) ? checkpoint.flow.playedMediaIds : []),
       videosCompleted: matchingCheckpoint ? Math.max(0, Number(checkpoint.flow?.videosCompleted) || 0) : 0, embedded: null,
       embeddedAttemptId: null, embeddedAttempts: 0, embeddedRetryAt: 0, settleDone: false, settleAt: 0,
+      dwelled: new Set(),
       resumeEmbeddedId: matchingCheckpoint ? checkpoint.flow?.embeddedMediaId || null : null, guards: new Map(),
       disclosures: new WeakSet(), expandingMedia: null, expansionNeedsStep: false, trace: [] };
     flow.scrollRoot = courseScrollRoot();
