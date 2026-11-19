@@ -2,7 +2,7 @@
   "manifest_version": 3,
   "name": "ITC 学习助手 · Flow",
   "short_name": "ITC Flow",
-  "version": "1.2.14",
+  "version": "1.2.15",
   "description": "华为 ICT 学院课程助手：识别阅读与视频、定时滚动、自动播放及连续切换课程，支持液态玻璃与三种主题。",
   "minimum_chrome_version": "120",
   "action": {

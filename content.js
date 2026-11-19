@@ -53,6 +53,10 @@
   const MANUAL_TASK = /(?:考试|测验|测试题|章节测试|随堂测试|随堂练习|章节练习|习题|练习题|考核|实操|实验任务|实验指导|在线实验|直播|问卷|quiz|exam|assessment|live\s*(?:class|session)|hands.on\s*lab)/i;
   const NEXT_TEXT = /^(?:下一(?:个)?(?:项(?:任务)?|节|课|章|讲|任务|章节|视频|课时|单元)|下(?:一)?节(?:课)?|下一个|继续学习|next(?:\s+(?:lesson|task|chapter|video|unit))?)[\s›»→>]*$/i;
   const EMBEDDED_MAX_ATTEMPTS = 4;
+  // The platform derives chapter completion from the reader's last reported
+  // position, so the final screen needs a moment to be reported before the
+  // chapter is declared finished.
+  const SETTLE_TAIL_MS = 1200;
   let settings = { ...DEFAULTS, selectors: { ...DEFAULTS.selectors } };
   let current = null;
   let running = false;
@@ -95,6 +99,7 @@
   let pendingEmbeddedToken = null;
   let embeddedTimer = null;
   let embeddedRetryTimer = null;
+  let settleTimer = null;
   const documentScrollHosts = new WeakMap();
   const documentScrollProxies = new WeakSet();
   let flowGuardCleanup = null;
@@ -843,7 +848,8 @@
     if (!flow) return null;
     return { playedMediaIds: [...flow.played], videosCompleted: flow.videosCompleted,
       atEnd: !nextFlowTarget() && !nextFlowMedia(), taskCompleteConfirmed: platformComplete(),
-      embeddedActive: Boolean(flow.embedded), embeddedMediaId: flow.embedded?.id || null, role: embeddedBinding ? "embedded" : "owner" };
+      embeddedActive: Boolean(flow.embedded), embeddedMediaId: flow.embedded?.id || null, role: embeddedBinding ? "embedded" : "owner",
+      coverage: readingCoverage(), settleDone: Boolean(flow.settleDone) };
   }
 
   function flowDetail() {
@@ -864,6 +870,44 @@
     flow.trace.push({ at: Math.round(performance.now() / 1000), phase, scroll: scrollState, action, position,
       media: media ? { tag: media.tagName, id: String(media.getAttribute?.("id") || "").slice(0, 40), passed: mediaPassed(media) } : null });
     if (flow.trace.length > 40) flow.trace.splice(0, flow.trace.length - 40);
+  }
+
+  function readingCoverage() {
+    const targets = flow ? flowTargets() : [];
+    const target = targets[targets.length - 1] || null;
+    if (!target) return null;
+    const max = Math.max(0, Math.round(Number(target.scrollHeight) - Number(target.clientHeight)));
+    const position = Math.round(Number(target.scrollTop) || 0);
+    return { tag: String(target.tagName || "").toLowerCase(), id: String(target.id || "").slice(0, 40),
+      position, max, percent: max > 0 ? Math.min(100, Math.round(position / max * 100)) : 100 };
+  }
+
+  function settleFlowTail() {
+    // Chapter completion is reported from the reader's own scroll position.
+    // Before finishing, walk every reading target to its end once and give the
+    // page a moment to post that last location, otherwise the chapter can stay
+    // one screen short even though the text looks finished.
+    if (!flow) return;
+    flow.settleDone = true;
+    flow.settleAt = performance.now();
+    for (const target of flowTargets()) {
+      const max = Math.max(0, Number(target.scrollHeight) - Number(target.clientHeight));
+      if (!(Number(target.scrollTop) < max)) continue;
+      try { target.scrollTo({ top: max, behavior: "instant" }); } catch { target.scrollTop = max; }
+      activeScrollTargets.add(target);
+    }
+    clearTimeout(scrollTimer); scrollTimer = null; nextScrollAt = 0;
+    clearTimeout(settleTimer);
+    phase = "reading";
+    detail = "已读到章末，正在确认末尾位置已上报";
+    traceFlow("settle-tail");
+    settleTimer = setTimeout(() => {
+      settleTimer = null;
+      if (!running || paused || completed || !flow) return;
+      evaluateFlow();
+      report(true);
+    }, SETTLE_TAIL_MS);
+    report(true);
   }
 
   function finishEmbedded() {
@@ -1114,12 +1158,19 @@
         detail = "教材已滚到底，但末尾仍被外层窗口遮挡；请手动显示完整教材区域后继续";
         report(true); return;
       }
+      if (!flow.settleDone) { settleFlowTail(); return; }
+      // Give the page its full settle window even when a tick lands earlier.
+      if (flow.settleAt && performance.now() - flow.settleAt < SETTLE_TAIL_MS) { report(true); return; }
       scrollState = "bottom";
       if (embeddedBinding) { finishEmbedded(); return; }
       if (platformComplete()) { finish(); return; }
       phase = "waiting_completion"; detail = flowDetail(); report(true); return;
     }
     phase = "reading"; detail = flowDetail();
+    flow.settleDone = false;
+    // Content can grow after the chapter looked finished (late-loading last
+    // screen); keep the reading step armed so the new tail is still reached.
+    if (!scrollTimer) scheduleScroll();
   }
 
   function videoFinished(media) {
@@ -1198,6 +1249,7 @@
     clearTimeout(scrollVerifyTimer); scrollVerifyTimer = null;
     clearTimeout(embeddedTimer); embeddedTimer = null;
     clearTimeout(embeddedRetryTimer); embeddedRetryTimer = null;
+    clearTimeout(settleTimer); settleTimer = null;
     nextScrollAt = 0;
     clearTimeout(mediaGateTimer); mediaGateTimer = null;
     mediaGateGeneration += 1;
@@ -1903,7 +1955,7 @@
     flow = { root: current.flowElement || current.element, frameTransport: current.frameTransport,
       played: new Set(matchingCheckpoint && Array.isArray(checkpoint.flow?.playedMediaIds) ? checkpoint.flow.playedMediaIds : []),
       videosCompleted: matchingCheckpoint ? Math.max(0, Number(checkpoint.flow?.videosCompleted) || 0) : 0, embedded: null,
-      embeddedAttemptId: null, embeddedAttempts: 0, embeddedRetryAt: 0,
+      embeddedAttemptId: null, embeddedAttempts: 0, embeddedRetryAt: 0, settleDone: false, settleAt: 0,
       resumeEmbeddedId: matchingCheckpoint ? checkpoint.flow?.embeddedMediaId || null : null, guards: new Map(),
       disclosures: new WeakSet(), expandingMedia: null, expansionNeedsStep: false, trace: [] };
     flow.scrollRoot = courseScrollRoot();
@@ -2156,6 +2208,7 @@
           flow.videosCompleted += Math.max(0, Number((message.snapshot || embedded.snapshot)?.flow?.videosCompleted) || 0);
           flow.embedded = null; phase = "reading"; scrollState = "scheduled";
           flow.embeddedAttemptId = null; flow.embeddedAttempts = 0;
+          flow.settleDone = false;
           detail = "内嵌内容已结束，继续阅读同一页面下方内容";
           scheduleScroll(); report(true); respond({ ok: true }); break;
         }

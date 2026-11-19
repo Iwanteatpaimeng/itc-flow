@@ -515,7 +515,9 @@ test("embedded video completion returns to its owner to read trailing text befor
   assert.equal(owner.snapshot().phase, "playing");
   assert.equal(root.scrollTop, 0);
   child.media.finish();
-  await child.clock.advance(2000);
+  // The child now confirms the chapter tail (scroll + settle window) before it
+  // hands the page back, so allow for the settle window on top of one step.
+  await child.clock.advance(4000);
   const returned = child.outbound.find(message => message.type === "ENGINE_EMBEDDED_DONE");
   assert.ok(returned);
   assert.equal(doneCount(child), 0, "an embedded frame does not finish the parent course task");
@@ -774,6 +776,28 @@ test("a document type marker in the course navigation cannot be mistaken for the
   engine.mappings.set("[data-task-type='document']", [engine.active]);
   const probe = await engine.ask("ENGINE_PROBE");
   assert.equal(probe.candidate, null, "a visible document-labelled directory button has no readable document content");
+  assert.equal(doneCount(engine), 0);
+});
+
+test("the last screen of a chapter is settled and re-reported before the task completes", async () => {
+  const engine = createContent({ textLength: 600 });
+  await engine.ask("ENGINE_RUN", { settings: { scrollIntervalSeconds: 1, scrollEnabled: true } });
+  await engine.clock.advance(60_000);
+  const tail = engine.reader.scrollHeight - engine.reader.clientHeight;
+  assert.equal(engine.reader.scrollTop, tail, "the chapter tail should be reached");
+  let trace = (await engine.ask("ENGINE_PROBE")).diagnostics.runtime.trace;
+  assert.ok(trace.some(entry => entry.action === "settle-tail"), "the tail settle step should appear in the trace");
+  assert.equal(doneCount(engine), 0);
+
+  // A late-loading last screen must still be reached: the reader reports
+  // completion from its own position, so the tail is settled again.
+  engine.reader.scrollHeight = tail + engine.reader.clientHeight + 120;
+  await engine.clock.advance(6_000);
+  const grown = engine.reader.scrollHeight - engine.reader.clientHeight;
+  assert.equal(engine.reader.scrollTop, grown, "the grown tail should be reached as well");
+  trace = (await engine.ask("ENGINE_PROBE")).diagnostics.runtime.trace;
+  assert.ok(trace.filter(entry => entry.action === "settle-tail").length >= 2, "each new tail should be settled once");
+  assert.ok(["bottom", "waiting_completion"].includes(engine.snapshot().scroll.state));
   assert.equal(doneCount(engine), 0);
 });
 
